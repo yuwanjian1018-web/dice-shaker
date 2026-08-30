@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "好运骰盅",
+    "navigationBarBackgroundColor": "#111018",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#111018",
+    "backgroundTextStyle": "light"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

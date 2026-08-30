@@ -1,0 +1,25 @@
+{
+  "description": "原生微信小程序：摇五颗骰子并展示骰盅动画",
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "tests"
+      }
+    ]
+  },
+  "setting": {
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": true,
+    "checkSiteMap": true,
+    "uploadWithSourceMap": true,
+    "compileHotReLoad": true,
+    "minifyWXML": true
+  },
+  "compileType": "miniprogram",
+  "appid": "wx41968beda02adb11",
+  "projectname": "dice-shaker",
+  "condition": {}
+}

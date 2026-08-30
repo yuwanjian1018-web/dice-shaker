@@ -1,0 +1,90 @@
+<view class="page-shell">
+  <view class="ambient ambient--one"></view>
+  <view class="ambient ambient--two"></view>
+  <view class="grain"></view>
+
+  <view class="content">
+    <view class="hero">
+      <text class="eyebrow">FORTUNE DICE</text>
+      <text class="title">好运骰盅</text>
+      <text class="subtitle">五颗骰子，一次未知的答案</text>
+    </view>
+
+    <view class="game-card">
+      <view class="status-bar">
+        <view class="status-indicator status-indicator--{{phase}}"></view>
+        <text class="status-text">{{statusText}}</text>
+      </view>
+
+      <view class="stage">
+        <view class="table-glow"></view>
+        <view class="tray-ring"></view>
+
+        <view class="dice-tray dice-tray--{{phase}}">
+          <view
+            wx:for="{{dice}}"
+            wx:key="id"
+            wx:for-item="die"
+            class="die die--{{index}}"
+          >
+            <view
+              wx:for="{{die.pips}}"
+              wx:key="key"
+              wx:for-item="pip"
+              class="pip pip--{{pip.key}} {{pip.visible ? 'pip--visible' : ''}}"
+            ></view>
+          </view>
+        </view>
+
+        <view class="motion-lines motion-lines--{{phase}}">
+          <view class="motion-line motion-line--left-one"></view>
+          <view class="motion-line motion-line--left-two"></view>
+          <view class="motion-line motion-line--right-one"></view>
+          <view class="motion-line motion-line--right-two"></view>
+        </view>
+
+        <view class="cup-scene cup-scene--{{phase}}">
+          <view class="cup-knob">
+            <view class="cup-knob-top"></view>
+          </view>
+          <view class="cup-body">
+            <view class="cup-top"></view>
+            <view class="cup-highlight"></view>
+            <view class="cup-emblem">
+              <text class="cup-emblem-small">GOOD</text>
+              <text class="cup-emblem-main">LUCK</text>
+            </view>
+            <view class="cup-base-ring"></view>
+          </view>
+        </view>
+      </view>
+
+      <view class="result-row">
+        <view class="result-copy">
+          <text class="result-label">TOTAL SCORE</text>
+          <text class="result-hint">五颗骰子点数之和</text>
+        </view>
+        <view class="result-value-wrap result-value-wrap--{{phase}}">
+          <text class="result-value">{{phase === 'revealed' ? total : '—'}}</text>
+          <text class="result-unit">点</text>
+        </view>
+      </view>
+
+      <button
+        class="roll-button {{isBusy ? 'roll-button--busy' : ''}}"
+        hover-class="roll-button--pressed"
+        disabled="{{isBusy}}"
+        bindtap="handleRoll"
+      >
+        <view class="button-icon">
+          <view class="mini-pip mini-pip--one"></view>
+          <view class="mini-pip mini-pip--two"></view>
+          <view class="mini-pip mini-pip--three"></view>
+        </view>
+        <text>{{actionLabel}}</text>
+      </button>
+    </view>
+
+    <text class="footnote">每次点击都会独立随机生成五颗骰子</text>
+  </view>
+</view>
