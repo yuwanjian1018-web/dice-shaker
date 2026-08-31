@@ -1,0 +1,58 @@
+{
+  "viewport": {
+    "screen": [
+      430,
+      932
+    ],
+    "window": [
+      430,
+      834
+    ],
+    "nativeDPR": 3,
+    "screenshotScale": 1.5
+  },
+  "comparisons": [
+    {
+      "name": "closed",
+      "source": {
+        "x": 0,
+        "y": 78,
+        "width": 484,
+        "height": 990
+      },
+      "native": {
+        "width": 645,
+        "height": 1251
+      },
+      "note": "Source scaled to 430x880; native downsampled 1.5x to 430x834. Bottom 46px on native side is canvas padding, not UI. Device chrome excluded, responsive height difference explicitly retained."
+    },
+    {
+      "name": "open",
+      "source": {
+        "x": 495,
+        "y": 78,
+        "width": 484,
+        "height": 990
+      },
+      "native": {
+        "width": 645,
+        "height": 1251
+      },
+      "note": "Source scaled to 430x880; native downsampled 1.5x to 430x834. Bottom 46px on native side is canvas padding, not UI. Device chrome excluded, responsive height difference explicitly retained."
+    },
+    {
+      "name": "settings",
+      "source": {
+        "x": 989,
+        "y": 78,
+        "width": 484,
+        "height": 990
+      },
+      "native": {
+        "width": 645,
+        "height": 1251
+      },
+      "note": "Source scaled to 430x880; native downsampled 1.5x to 430x834. Bottom 46px on native side is canvas padding, not UI. Device chrome excluded, responsive height difference explicitly retained."
+    }
+  ]
+}

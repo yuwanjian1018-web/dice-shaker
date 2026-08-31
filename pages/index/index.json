@@ -1,4 +1,5 @@
 {
-  "navigationBarTitleText": "好运骰盅",
-  "enablePullDownRefresh": false
+  "navigationBarTitleText": "摇骰子",
+  "enablePullDownRefresh": false,
+  "disableScroll": true
 }

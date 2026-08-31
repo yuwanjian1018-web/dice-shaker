@@ -20,8 +20,9 @@ function rollDie(random = Math.random) {
   return Math.floor(sample * 6) + 1
 }
 
-function rollDice(random = Math.random) {
-  return Array.from({ length: DICE_COUNT }, () => rollDie(random))
+function rollDice(random = Math.random, count = DICE_COUNT) {
+  if (!Number.isInteger(count) || count < 1 || count > 6) throw new RangeError('dice count must be an integer between 1 and 6')
+  return Array.from({ length: count }, () => rollDie(random))
 }
 
 function createDieModel(value, index) {
@@ -34,6 +35,7 @@ function createDieModel(value, index) {
   return {
     id: `die-${index}`,
     value,
+    image: `/assets/dice/die-${value}.png`,
     color: value === 1 || value === 4 ? 'red' : 'blue',
     pips: PIP_KEYS.map((key) => ({
       key,

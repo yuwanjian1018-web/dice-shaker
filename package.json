@@ -2,9 +2,14 @@
   "name": "dice-shaker-miniprogram",
   "version": "1.0.0",
   "private": true,
-  "description": "A native WeChat Mini Program that rolls five dice",
+  "description": "Native WeChat dice shaker with black cup, sound, lock and 1–6 dice",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node scripts/check-project.js"
+    "check": "node scripts/check-project.js",
+    "build:audio": "node scripts/build-shake-audio.js",
+    "capture:wechat": "node scripts/capture-devtools.js"
+  },
+  "devDependencies": {
+    "miniprogram-automator": "0.12.1"
   }
 }

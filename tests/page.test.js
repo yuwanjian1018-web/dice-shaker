@@ -25,10 +25,12 @@ test('index page connects both controls and lifecycle to the dice game', (t) => 
   assert.equal(typeof definition.onUnload, 'function')
 
   const page = {
+    ...definition,
+    data: { ...definition.data },
     updates: [],
     setData(nextState) {
       this.updates.push(nextState)
-      this.data = nextState
+      this.data = { ...this.data, ...nextState }
     }
   }
 

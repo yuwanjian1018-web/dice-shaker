@@ -1,7 +1,7 @@
 page {
   min-height: 100%;
-  background: #f5f8f2;
-  color: #244d41;
+  background: #353739;
+  color: #f3f1ed;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
@@ -15,3 +15,5 @@ button {
 button::after {
   border: 0;
 }
+
+button { font-weight: 400; -webkit-tap-highlight-color: transparent; }

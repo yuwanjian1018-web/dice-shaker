@@ -170,3 +170,54 @@ test('disposing during opening, closing or shaking cancels every pending update'
     assert.equal(updates.length, beforeDispose)
   }
 })
+
+test('lock blocks every roll while keeping manual reveal and prior values available', () => {
+  const clock = createFakeClock()
+  let randomCalls = 0
+  const game = createDiceGame({ schedule: clock.schedule, cancel: clock.cancel, random: () => { randomCalls++; return .7 } })
+  const original = game.getState().dice
+  game.toggleLock()
+  assert.equal(game.getState().isLocked, true)
+  for (let i = 0; i < 5; i++) assert.equal(game.startRoll(), false)
+  assert.equal(game.setDiceCount(6), false)
+  assert.equal(game.toggleLid(), true)
+  clock.runNext()
+  assert.deepEqual(game.getState().dice, original)
+  assert.equal(randomCalls, 0)
+  game.toggleLock()
+  assert.equal(game.startRoll(), true)
+  clock.runNext(); clock.runNext()
+  assert.equal(randomCalls, 5)
+})
+
+test('locking during cover or shake cancels all pending random result commits', () => {
+  for (const phase of ['covering', 'shaking']) {
+    const clock = createFakeClock()
+    let randomCalls = 0
+    const game = createDiceGame({ schedule: clock.schedule, cancel: clock.cancel, random: () => { randomCalls++; return .5 } })
+    const original = game.getState().dice
+    game.startRoll()
+    if (phase === 'shaking') clock.runNext()
+    game.toggleLock()
+    assert.equal(game.getState().phase, 'covered')
+    assert.equal(game.getState().isLocked, true)
+    assert.equal(game.getState().isBusy, false)
+    assert.equal(clock.activeCount(), 0)
+    assert.deepEqual(game.getState().dice, original)
+    assert.equal(randomCalls, 0)
+  }
+})
+
+test('all six count settings roll exactly that count and reject invalid or busy changes', () => {
+  const clock = createFakeClock()
+  const game = createDiceGame({ schedule: clock.schedule, cancel: clock.cancel, random: () => .99 })
+  for (const invalid of [0, 7, 2.5, '3', NaN]) assert.equal(game.setDiceCount(invalid), false)
+  for (let count = 1; count <= 6; count++) {
+    assert.equal(game.setDiceCount(count), true)
+    assert.equal(game.getState().dice.length, count)
+    game.startRoll()
+    assert.equal(game.setDiceCount(2), false)
+    clock.runNext(); clock.runNext()
+    assert.deepEqual(game.getState().dice.map(die => die.value), Array(count).fill(6))
+  }
+})

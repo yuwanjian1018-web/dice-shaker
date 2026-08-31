@@ -21,6 +21,8 @@ function createDiceGame(options = {}) {
     isBusy: false,
     isLidOpen: false,
     hasRolled: false,
+    isLocked: false,
+    diceCount: 5,
     actionLabel: '摇一摇',
     lidActionLabel: '打开盖子',
     lidStateLabel: '已合盖',
@@ -52,7 +54,7 @@ function createDiceGame(options = {}) {
   }
 
   function startRoll() {
-    if (disposed || state.isBusy) return false
+    if (disposed || state.isBusy || state.isLocked) return false
 
     update({
       phase: 'covering',
@@ -72,7 +74,7 @@ function createDiceGame(options = {}) {
       })
 
       after(SHAKE_DURATION_MS, () => {
-        const values = rollDice(random)
+        const values = rollDice(random, state.diceCount)
 
         // 摇完保持合盖；只有用户主动开盖时才展示本轮骰子。
         update({
@@ -80,7 +82,7 @@ function createDiceGame(options = {}) {
           isBusy: false,
           isLidOpen: false,
           hasRolled: true,
-          actionLabel: '摇一摇',
+          actionLabel: '再摇一次',
           lidActionLabel: '打开盖子',
           lidStateLabel: '已合盖',
           statusText: '摇好了，打开看看吧',
@@ -143,9 +145,41 @@ function createDiceGame(options = {}) {
     timers.clear()
   }
 
+  function cancelMotion() {
+    if (disposed) return false
+    timers.forEach((id) => cancel(id))
+    timers.clear()
+    update({
+      phase: state.isLidOpen ? 'revealed' : 'covered', isBusy: false,
+      actionLabel: state.hasRolled ? '再摇一次' : '摇一摇',
+      lidActionLabel: state.isLidOpen ? '合上盖子' : '打开盖子'
+    })
+    return true
+  }
+
+  function toggleLock() {
+    if (disposed) return false
+    // 本轮只在摇动完成后提交；取消不改变旧点数。
+    if (!state.isLocked && (state.phase === 'shaking' || state.phase === 'covering')) cancelMotion()
+    update({ isLocked: !state.isLocked })
+    return true
+  }
+
+  function setDiceCount(count) {
+    if (disposed || state.isBusy || state.isLocked || !Number.isInteger(count) || count < 1 || count > 6) return false
+    if (count === state.diceCount) return true
+    const values = state.dice.map((die) => die.value)
+    while (values.length < count) values.push((values.length % 6) + 1)
+    update({ diceCount: count, dice: toDiceModels(values.slice(0, count)), hasRolled: false, actionLabel: '摇一摇' })
+    return true
+  }
+
   return {
     dispose,
     getState,
+    cancelMotion,
+    toggleLock,
+    setDiceCount,
     startRoll,
     toggleLid
   }
