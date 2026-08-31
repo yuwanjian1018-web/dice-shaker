@@ -1,44 +1,62 @@
 # 好运骰盅 · 原生微信小程序
 
-这是一个从零创建的微信原生小程序：点击按钮后，骰盅先盖下、摇动，再自动揭开并显示五颗随机骰子及总点数。
+这是一个微信原生小程序：点击“摇一摇”生成五颗随机骰子，摇完保持合盖，由用户手动揭晓。界面采用暖白、薄荷绿与浅木色，不显示总点数。
 
 ## 已实现
 
 - 五颗标准六面骰子，每次独立随机生成 1～6 点
-- 骰盅盖下、连续摇动、向上揭开的完整动画
-- 五种骰子落地动画与点阵显示
-- 动画期间锁定按钮，防止连续点击导致计时器叠加
-- 自动计算并显示五颗骰子的总点数
-- 无图片依赖，骰子和骰盅均由 WXML/WXSS 绘制
+- 点击骰盅本身或“打开盖子 / 合上盖子”按钮，手动控制开合
+- 摇完保持合盖；反复开合保留本轮点数，只有“摇一摇”重新生成结果
+- 骰子 1、4 点为红色，2、3、5、6 点为蓝色
+- 盖下、摇动与揭盖动画；动画期间锁定两个按钮，避免计时器叠加
+- 薄荷绿骰盅、浅木色托盘与原生骰子点阵，素材随小程序本地打包
 - Node.js 自动化测试与项目结构检查
 
 ## 在微信开发者工具中打开
 
 1. 安装并打开[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)。
-2. 先按微信官方说明[扫码申请免费测试号](https://developers.weixin.qq.com/miniprogram/dev/devtools/sandbox.html)，复制分配给你的小程序 AppID。
-3. 点击开发者工具中的 **“+” / 导入项目**。
+2. 点击开发者工具中的 **“+” / 导入项目**。
+3. 保留项目已有 AppID；本次设计修改没有改变账号、AppID 或安全设置。
 4. 项目目录选择：
 
    ```text
    C:\Users\xiaojian\Documents\WeChatProjects\dice-shaker
    ```
 
-5. 项目已配置测试 AppID；如果以后换成正式小程序，可在开发者工具的项目设置中更新 AppID。
-6. 导入后点击顶部 **编译**，再点击页面中的 **摇一摇**。
+5. 导入后点击顶部 **编译**，再点击页面中的 **摇一摇**。
+6. 摇动结束后点击 **打开盖子**，或直接点击骰盅揭晓；再次点击即可合盖。
 
-> 微信当前已将 `touristappid` 视为无效值；游客模式只能编辑本地项目。要使用模拟器、真机预览或发布，请使用测试 AppID 或你正式注册的小程序 AppID。AppID 不是密码，但 **AppSecret 永远不要写进前端代码或提交到 Git**。
+> AppID 不是密码，但 **AppSecret 永远不要写进前端代码或提交到 Git**。真机预览或发布需使用有相应权限的微信开发者账号，本项目不会自动上传或发布。
 
 ## 运行测试
 
-在 WSL 终端执行：
+在 Windows PowerShell 中执行：
 
-```bash
-cd /mnt/c/Users/xiaojian/Documents/WeChatProjects/dice-shaker
-npm test
-npm run check
+```powershell
+Set-Location 'C:\Users\xiaojian\Documents\WeChatProjects\dice-shaker'
+npm.cmd test
+npm.cmd run check
 ```
 
-项目没有第三方 npm 依赖，因此不需要先运行 `npm install`。
+小程序运行与上述测试没有第三方 npm 依赖，因此不需要先运行 `npm install`。测试覆盖点阵、红蓝配色、手动开合、摇后保持合盖、重复点击保护和页面退出时的计时器清理。
+
+## 素材与设计记录
+
+- `assets/`：小程序实际使用的透明 PNG，骰盅 640 × 640，托盘 768 × 384。
+- `design/asset-sources/`：保留未经缩放的 ImageGen 原始素材；对应提示词在 `design/cup-asset-prompt.md` 与 `design/tray-asset-prompt.md`。
+- 操作图标来自 [Phosphor Icons](https://github.com/phosphor-icons/core)，MIT 许可保存在 `assets/icons/LICENSE.txt`。
+- `design/asset-manifest.json`：素材来源、尺寸、文件大小与 SHA-256；`design-qa.md`：微信模拟器验收记录。
+- `design/`、`tests/`、`scripts/` 与说明文档已从小程序打包中排除。
+
+只有重建图片时才需要 Node.js 与 `sharp`（本次验证环境为 Node.js 24.18.0、sharp 0.35.4）。将 `DICE_SHARP_MODULE` 指向已有 sharp 模块，运行以下命令即可从保留的原图重建：
+
+```powershell
+# 若首次下载图标受 Node.js 网络环境影响，先使用 Windows 网络栈下载。
+./scripts/fetch-icons.ps1
+node scripts/build-assets.js
+```
+
+已有图标源文件会直接复用；重建不会覆盖 ImageGen 原图。
 
 ## Git 新手说明
 
@@ -71,9 +89,11 @@ git commit -m "feat: create dice shaker mini program"
 ├── app.js / app.json / app.wxss       小程序全局配置
 ├── pages/index/                       主页面、样式与动画
 ├── utils/dice.js                      骰子随机与点阵模型
-├── utils/game.js                      盖下、摇动、揭盖状态流程
+├── utils/game.js                      手动开合与摇动状态流程
+├── assets/                            本地骰盅、托盘与操作图标
+├── design/                            设计依据、原始素材和验收截图
 ├── tests/                             Node.js 自动化测试
-├── scripts/check-project.js           项目结构及语法检查
+├── scripts/                           项目检查和素材构建脚本
 └── project.config.json                微信开发者工具项目配置
 ```
 
@@ -89,6 +109,10 @@ git commit -m "feat: create dice shaker mini program"
 
 - 盖下骰盅：280 ms
 - 摇动骰盅：1200 ms
-- 随后自动揭盖并展示结果
+- 摇完保持合盖，等待用户手动揭晓
+- 手动揭盖：420 ms
+- 手动合盖：280 ms
+
+开合操作不调用随机数，也不改变本轮骰子。页面退出会清除未完成的计时器。
 
 这些时间定义在 `utils/game.js`，动画外观定义在 `pages/index/index.wxss`。

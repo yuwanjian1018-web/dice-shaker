@@ -4,6 +4,7 @@ const assert = require('node:assert/strict')
 const {
   COVER_DURATION_MS,
   SHAKE_DURATION_MS,
+  OPEN_DURATION_MS,
   createDiceGame
 } = require('../utils/game')
 
@@ -41,12 +42,13 @@ test('game starts covered with five dice ready beneath the cup', () => {
   assert.equal(state.phase, 'covered')
   assert.equal(state.isBusy, false)
   assert.equal(state.actionLabel, '摇一摇')
-  assert.equal(state.statusText, '点击按钮，摇出你的好运气')
+  assert.equal(state.isLidOpen, false)
+  assert.equal(state.lidActionLabel, '打开盖子')
   assert.deepEqual(state.dice.map((die) => die.value), [1, 2, 3, 4, 5])
-  assert.equal(state.total, 15)
+  assert.equal(Object.hasOwn(state, 'total'), false)
 })
 
-test('startRoll covers, shakes, then reveals one fresh five-die result', () => {
+test('shaking creates one fresh result but keeps the lid closed until a manual reveal', () => {
   const clock = createFakeClock()
   const samples = [0, 0.2, 0.4, 0.6, 0.999999]
   const states = []
@@ -62,19 +64,26 @@ test('startRoll covers, shakes, then reveals one fresh five-die result', () => {
   assert.equal(game.startRoll(), false, 'a second tap is ignored while animation runs')
   assert.equal(game.getState().phase, 'covering')
   assert.equal(game.getState().isBusy, true)
+  assert.equal(game.toggleLid(), false)
 
   assert.equal(clock.runNext(), COVER_DURATION_MS)
   assert.equal(game.getState().phase, 'shaking')
+  assert.equal(game.toggleLid(), false)
   assert.equal(clock.runNext(), SHAKE_DURATION_MS)
 
-  const revealed = game.getState()
-  assert.equal(revealed.phase, 'revealed')
-  assert.equal(revealed.isBusy, false)
-  assert.equal(revealed.actionLabel, '再摇一次')
-  assert.equal(revealed.statusText, '结果揭晓！五颗骰子合计 16 点')
-  assert.deepEqual(revealed.dice.map((die) => die.value), [1, 2, 3, 4, 6])
-  assert.equal(revealed.total, 16)
-  assert.deepEqual(states.map((state) => state.phase), ['covering', 'shaking', 'revealed'])
+  const covered = game.getState()
+  assert.equal(covered.phase, 'covered')
+  assert.equal(covered.isLidOpen, false)
+  assert.equal(covered.isBusy, false)
+  assert.equal(covered.hasRolled, true)
+  assert.equal(covered.statusText, '摇好了，打开看看吧')
+  assert.deepEqual(covered.dice.map((die) => die.value), [1, 2, 3, 4, 6])
+  assert.equal(clock.activeCount(), 0, 'no automatic reveal is scheduled')
+  assert.deepEqual(states.map((state) => state.phase), ['covering', 'shaking', 'covered'])
+  assert.equal(game.toggleLid(), true)
+  assert.equal(clock.runNext(), OPEN_DURATION_MS)
+  assert.equal(game.getState().phase, 'revealed')
+  assert.equal(randomIndex, 5, 'opening does not roll again')
 })
 
 test('dispose cancels an unfinished animation', () => {
@@ -86,4 +95,78 @@ test('dispose cancels an unfinished animation', () => {
 
   game.dispose()
   assert.equal(clock.activeCount(), 0)
+})
+
+test('repeated manual opening and closing preserves the dice and blocks overlapping actions', () => {
+  const clock = createFakeClock()
+  let randomCalls = 0
+  const game = createDiceGame({ random: () => { randomCalls += 1; return 0.2 }, schedule: clock.schedule, cancel: clock.cancel })
+  const initialDice = game.getState().dice
+
+  for (let repeat = 0; repeat < 4; repeat += 1) {
+    assert.equal(game.toggleLid(), true)
+    assert.equal(game.getState().phase, 'opening')
+    assert.equal(game.toggleLid(), false)
+    assert.equal(game.startRoll(), false)
+    assert.equal(clock.runNext(), OPEN_DURATION_MS)
+    assert.equal(game.getState().isLidOpen, true)
+    assert.equal(game.getState().lidActionLabel, '合上盖子')
+
+    assert.equal(game.toggleLid(), true)
+    assert.equal(game.getState().phase, 'closing')
+    assert.equal(game.toggleLid(), false)
+    assert.equal(game.startRoll(), false)
+    assert.equal(clock.runNext(), COVER_DURATION_MS)
+    assert.equal(game.getState().isLidOpen, false)
+    assert.deepEqual(game.getState().dice, initialDice)
+    assert.equal(clock.activeCount(), 0)
+  }
+  assert.equal(randomCalls, 0)
+})
+
+test('rolling while open closes first, keeps old dice hidden and then waits for manual reveal', () => {
+  const clock = createFakeClock()
+  let randomCalls = 0
+  const game = createDiceGame({ random: () => { randomCalls += 1; return 0.999 }, schedule: clock.schedule, cancel: clock.cancel })
+  game.toggleLid()
+  clock.runNext()
+  assert.equal(game.startRoll(), true)
+  assert.equal(game.getState().isLidOpen, false)
+  assert.equal(game.getState().phase, 'covering')
+  assert.equal(randomCalls, 0)
+  clock.runNext()
+  assert.equal(randomCalls, 0)
+  clock.runNext()
+  assert.equal(randomCalls, 5)
+  assert.deepEqual(game.getState().dice.map(die => die.value), [6, 6, 6, 6, 6])
+  assert.equal(game.getState().phase, 'covered')
+  const rolledDice = game.getState().dice
+  game.toggleLid()
+  clock.runNext()
+  game.toggleLid()
+  clock.runNext()
+  game.toggleLid()
+  clock.runNext()
+  assert.deepEqual(game.getState().dice, rolledDice)
+  assert.equal(randomCalls, 5)
+})
+
+test('disposing during opening, closing or shaking cancels every pending update', () => {
+  for (const target of ['opening', 'closing', 'shaking']) {
+    const clock = createFakeClock()
+    const updates = []
+    const game = createDiceGame({ schedule: clock.schedule, cancel: clock.cancel, onChange: state => updates.push(state) })
+    if (target === 'shaking') { game.startRoll(); clock.runNext() }
+    else {
+      game.toggleLid()
+      if (target === 'closing') { clock.runNext(); game.toggleLid() }
+    }
+    assert.equal(game.getState().phase, target)
+    const beforeDispose = updates.length
+    game.dispose()
+    assert.equal(clock.activeCount(), 0)
+    assert.equal(game.toggleLid(), false)
+    assert.equal(game.startRoll(), false)
+    assert.equal(updates.length, beforeDispose)
+  }
 })

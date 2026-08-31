@@ -78,6 +78,15 @@ if (!process.exitCode) pass(`${jsFiles.length} 个 JavaScript 文件语法正确
 
 const wxmlPath = path.join(root, 'pages/index/index.wxml')
 const wxml = fs.readFileSync(wxmlPath, 'utf8')
+// 包括动态 src 分支中的本地素材，避免开发工具编译后才发现资源缺失。
+const assetPaths = [...new Set(wxml.match(/\/assets\/[\w./-]+\.(?:png|jpg|jpeg|webp)/g) || [])]
+for (const assetPath of assetPaths) {
+  if (!fs.existsSync(path.join(root, assetPath.slice(1)))) {
+    fail(`页面引用的本地素材不存在：${assetPath}`)
+  }
+}
+if (!process.exitCode) pass(`${assetPaths.length} 个页面素材引用有效`)
+
 const tagStack = []
 const tagPattern = /<(\/)?([a-z][\w-]*)\b[^>]*>/gi
 let tagMatch

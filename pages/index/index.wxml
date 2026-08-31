@@ -1,31 +1,27 @@
 <view class="page-shell">
-  <view class="ambient ambient--one"></view>
-  <view class="ambient ambient--two"></view>
-  <view class="grain"></view>
-
   <view class="content">
     <view class="hero">
-      <text class="eyebrow">FORTUNE DICE</text>
-      <text class="title">好运骰盅</text>
-      <text class="subtitle">五颗骰子，一次未知的答案</text>
+      <text class="eyebrow">日常里的小小玩心</text>
+      <text class="title">摇一点小好运</text>
+      <text class="subtitle">轻轻摇一摇，惊喜自己揭晓</text>
     </view>
 
-    <view class="game-card">
-      <view class="status-bar">
-        <view class="status-indicator status-indicator--{{phase}}"></view>
-        <text class="status-text">{{statusText}}</text>
+    <view class="play-card">
+      <view class="card-topline">
+        <text class="lid-status lid-status--{{phase}}">{{lidStateLabel}}</text>
+        <text class="dice-count">五颗骰子 · 一点惊喜</text>
       </view>
 
       <view class="stage">
-        <view class="table-glow"></view>
-        <view class="tray-ring"></view>
+        <image class="tray-art" src="/assets/tray-sage.png" mode="aspectFit" aria-hidden="true"></image>
 
-        <view class="dice-tray dice-tray--{{phase}}">
+        <view class="dice-tray {{isLidOpen ? 'dice-tray--visible' : ''}}" aria-hidden="{{!isLidOpen}}">
           <view
             wx:for="{{dice}}"
             wx:key="id"
             wx:for-item="die"
-            class="die die--{{index}}"
+            class="die die--{{index}} die--{{die.color}} die--value-{{die.value}}"
+            aria-label="{{isLidOpen ? '第' + (index + 1) + '颗骰子，' + die.value + '点' : ''}}"
           >
             <view
               wx:for="{{die.pips}}"
@@ -36,55 +32,51 @@
           </view>
         </view>
 
-        <view class="motion-lines motion-lines--{{phase}}">
-          <view class="motion-line motion-line--left-one"></view>
-          <view class="motion-line motion-line--left-two"></view>
-          <view class="motion-line motion-line--right-one"></view>
-          <view class="motion-line motion-line--right-two"></view>
-        </view>
-
-        <view class="cup-scene cup-scene--{{phase}}">
-          <view class="cup-knob">
-            <view class="cup-knob-top"></view>
-          </view>
-          <view class="cup-body">
-            <view class="cup-top"></view>
-            <view class="cup-highlight"></view>
-            <view class="cup-emblem">
-              <text class="cup-emblem-small">GOOD</text>
-              <text class="cup-emblem-main">LUCK</text>
-            </view>
-            <view class="cup-base-ring"></view>
-          </view>
-        </view>
+        <button
+          class="cup-toggle cup-toggle--{{phase}} {{isBusy ? 'is-busy' : ''}}"
+          hover-class="cup-toggle--pressed"
+          disabled="{{isBusy}}"
+          bindtap="handleToggleLid"
+          aria-label="{{isBusy ? '骰盅正在动作，请稍候' : lidActionLabel}}"
+        >
+          <image class="cup-art" src="/assets/cup-mint.png" mode="aspectFit" aria-hidden="true"></image>
+        </button>
       </view>
 
-      <view class="result-row">
-        <view class="result-copy">
-          <text class="result-label">TOTAL SCORE</text>
-          <text class="result-hint">五颗骰子点数之和</text>
-        </view>
-        <view class="result-value-wrap result-value-wrap--{{phase}}">
-          <text class="result-value">{{phase === 'revealed' ? total : '—'}}</text>
-          <text class="result-unit">点</text>
-        </view>
+      <view class="status-copy" aria-live="polite">
+        <text class="status-text">{{statusText}}</text>
       </view>
 
-      <button
-        class="roll-button {{isBusy ? 'roll-button--busy' : ''}}"
-        hover-class="roll-button--pressed"
-        disabled="{{isBusy}}"
-        bindtap="handleRoll"
-      >
-        <view class="button-icon">
-          <view class="mini-pip mini-pip--one"></view>
-          <view class="mini-pip mini-pip--two"></view>
-          <view class="mini-pip mini-pip--three"></view>
-        </view>
-        <text>{{actionLabel}}</text>
-      </button>
+      <view class="actions">
+        <button
+          class="roll-button {{isBusy ? 'is-busy' : ''}}"
+          hover-class="action--pressed"
+          disabled="{{isBusy}}"
+          bindtap="handleRoll"
+        >
+          <image class="action-icon" src="/assets/icons/dice-five-white.png" aria-hidden="true"></image>
+          <text>{{actionLabel}}</text>
+        </button>
+        <button
+          class="lid-button {{isBusy ? 'is-busy' : ''}}"
+          hover-class="action--pressed"
+          disabled="{{isBusy}}"
+          bindtap="handleToggleLid"
+        >
+          <image class="lid-icon" src="{{isLidOpen ? '/assets/icons/arrow-down.png' : '/assets/icons/arrow-up.png'}}" aria-hidden="true"></image>
+          <text>{{lidActionLabel}}</text>
+        </button>
+      </view>
+
+      <view class="tap-hint">
+        <image class="tap-icon" src="/assets/icons/hand-tap.png" aria-hidden="true"></image>
+        <text>轻点骰盅，也能开合</text>
+      </view>
     </view>
 
-    <text class="footnote">每次点击都会独立随机生成五颗骰子</text>
+    <view class="page-note">
+      <text>不必急着揭晓</text>
+      <text class="page-note-detail">把小小的期待，多留一会儿</text>
+    </view>
   </view>
 </view>

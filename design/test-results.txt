@@ -1,0 +1,24 @@
+
+> dice-shaker-miniprogram@1.0.0 test
+> node --test tests/*.test.js
+
+✔ rollDie maps random boundaries to values from 1 through 6 (2.5508ms)
+✔ rollDice returns exactly five dice by default (0.3485ms)
+✔ createDieModel exposes the correct visible pip positions (0.3958ms)
+✔ createDieModel rejects values outside a standard die (0.7282ms)
+✔ one and four have red pips; two, three, five and six have blue pips (0.2232ms)
+✔ game starts covered with five dice ready beneath the cup (1.8611ms)
+✔ shaking creates one fresh result but keeps the lid closed until a manual reveal (0.6985ms)
+✔ dispose cancels an unfinished animation (0.9815ms)
+✔ repeated manual opening and closing preserves the dice and blocks overlapping actions (0.6784ms)
+✔ rolling while open closes first, keeps old dice hidden and then waits for manual reveal (0.3609ms)
+✔ disposing during opening, closing or shaking cancels every pending update (0.2655ms)
+✔ index page connects both controls and lifecycle to the dice game (3.8949ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 104.917

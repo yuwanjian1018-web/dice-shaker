@@ -5,6 +5,22 @@
       {
         "type": "folder",
         "value": "tests"
+      },
+      {
+        "type": "folder",
+        "value": "design"
+      },
+      {
+        "type": "folder",
+        "value": "scripts"
+      },
+      {
+        "type": "file",
+        "value": "design-qa.md"
+      },
+      {
+        "type": "file",
+        "value": "README.md"
       }
     ]
   },

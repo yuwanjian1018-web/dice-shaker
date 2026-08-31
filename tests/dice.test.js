@@ -49,3 +49,8 @@ test('createDieModel rejects values outside a standard die', () => {
   assert.throws(() => createDieModel(0, 0), /between 1 and 6/)
   assert.throws(() => createDieModel(7, 0), /between 1 and 6/)
 })
+
+test('one and four have red pips; two, three, five and six have blue pips', () => {
+  const colors = [1, 2, 3, 4, 5, 6].map(value => createDieModel(value, 0).color)
+  assert.deepEqual(colors, ['red', 'blue', 'blue', 'red', 'blue', 'blue'])
+})

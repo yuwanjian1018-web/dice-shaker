@@ -34,6 +34,7 @@ function createDieModel(value, index) {
   return {
     id: `die-${index}`,
     value,
+    color: value === 1 || value === 4 ? 'red' : 'blue',
     pips: PIP_KEYS.map((key) => ({
       key,
       visible: visiblePips.includes(key)

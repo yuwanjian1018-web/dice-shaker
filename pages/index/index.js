@@ -4,10 +4,13 @@ Page({
   data: {
     phase: 'covered',
     isBusy: false,
+    isLidOpen: false,
+    hasRolled: false,
     actionLabel: '摇一摇',
-    statusText: '点击按钮，摇出你的好运气',
-    dice: [],
-    total: 0
+    lidActionLabel: '打开盖子',
+    lidStateLabel: '已合盖',
+    statusText: '摇一摇，再打开看看',
+    dice: []
   },
 
   onLoad() {
@@ -19,6 +22,10 @@ Page({
 
   handleRoll() {
     if (this.game) this.game.startRoll()
+  },
+
+  handleToggleLid() {
+    if (this.game) this.game.toggleLid()
   },
 
   onUnload() {

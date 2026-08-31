@@ -4,10 +4,10 @@
   ],
   "window": {
     "navigationBarTitleText": "好运骰盅",
-    "navigationBarBackgroundColor": "#111018",
-    "navigationBarTextStyle": "white",
-    "backgroundColor": "#111018",
-    "backgroundTextStyle": "light"
+    "navigationBarBackgroundColor": "#f5f8f2",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f5f8f2",
+    "backgroundTextStyle": "dark"
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json"
