@@ -8,7 +8,7 @@
 - 点击骰盅或“上划揭盖 / 下划合盖”提示，或在场景内上下滑动，手动控制开合
 - 摇完保持合盖；反复开合保留本轮点数，只有“摇一摇”重新生成结果
 - 骰子 1、4 点为红色，2、3、5、6 点为蓝色
-- 六种骰面使用同一实体骰子的合法朝向，相对面为 1/6、2/5、3/4；三个可见面的点数已经逐面核对。加大俯视角，五颗按 3+2、六颗按 3+3 排列，读取顶面点数
+- 六种骰面使用同一实体骰子的合法朝向，相对面为 1/6、2/5、3/4；三个可见面的点数已经逐面核对。保持现有俯视角，五颗按参考图恢复为后方一颗、左右各一颗、前方两颗，六颗仍按 3+3 排列
 - 先合盖，再连续左右晃动 1200 ms，伴随本地碰撞音效；晃动完停止音效并保留结果
 - 主按钮右侧锁图标：点击锁定，禁止按钮及手机晃动触发；再次点击解锁。锁定期间可查看结果，不能修改数量
 - 摇动中锁定会立即停止声音和动画，并保留上一轮点数；切到后台也会停止声音、计时器和传感器监听
@@ -45,7 +45,7 @@ npm.cmd run check
 
 开发者工具截图：先 `npm ci`，用已开启的自动化端口 9420 运行 `npm run capture:wechat -- closed.png`。本机当前基础库下自动化 `page.data` / 元素查询出现超时，截图可用；交互通过开发者工具原生界面和 Console 复测，不伪称全自动端到端测试通过。`scripts/devtools-console-check.js` 可粘贴到开发者工具 Console，调用真实页面处理函数与音频上下文做集成检查。
 
-2026-08-31新版素材回归：原生Console集成检查13项通过；375×667和430×932两种模拟器视口已检查。`design/black-implementation/preview-five-six.png`为五/六颗实际截图。真机声音听感和实际晃动阈值尚未校准，详细证据与边界见`design-qa.md`。
+2026-08-31追加布局调整：仅恢复五颗骰子的参考排列，保持当前骰子图片、角度与大小；盖子、底座同比放大约6%。在375×667和430×932模拟器中复查开合盖，截图位于`design/layout-return-20260831/`。此前新版素材的原生Console集成检查13项通过，记录保留在`design/black-implementation/`；本次没有重新宣称完整集成复测。真机声音听感和实际晃动阈值尚未校准，详细证据与边界见`design-qa.md`。
 
 官方自动化包的传递依赖存在 npm audit 告警，仅用于本地开发；未执行会替换其版本的 `audit fix --force`。不应将该工具作为线上服务或处理不可信文件。
 
@@ -56,7 +56,7 @@ npm.cmd run check
 - `design/asset-sources/dice-ivory-v2-alpha-qa.png` 与 `dice-ivory-v2-validation.json`：新版骰子的顶面/前面/右面核对；`dice-v1-backup/` 保留被替换的旧素材。
 - `design/black-implementation/reference.png`：本轮用户选定的设计图副本；旧设计图与薄荷绿素材均保留。
 - 操作图标来自 [Phosphor Icons](https://github.com/phosphor-icons/core)，MIT 许可保存在 `assets/icons/LICENSE.txt`。
-- `design-qa.md`：本轮验收；`design/black-implementation/previous-mint-design-qa.md` 保存旧版本验收，不与本轮结果混用。
+- `design-qa.md`：最新布局验收；`design/layout-return-20260831/previous-design-qa.md`保留此前黑色设计及骰面修订验收，薄荷绿旧版验收仍保留于`design/black-implementation/previous-mint-design-qa.md`。
 - `assets/audio/dice-shake.wav`：原创合成碰撞音效，1.2 s / 44.1 kHz / 单声道 PCM16。`npm run build:audio` 可按固定种子重建，无第三方录音素材。
 - `design/`、`tests/`、`scripts/` 与说明文档已从小程序打包中排除。
 
