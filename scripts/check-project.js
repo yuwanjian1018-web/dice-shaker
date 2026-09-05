@@ -63,6 +63,7 @@ const jsFiles = [
   'app.js',
   'pages/index/index.js',
   'utils/dice.js',
+  'utils/dice-layout.js',
   'utils/game.js',
   'utils/shake-detector.js'
 ]
@@ -81,7 +82,7 @@ const wxmlPath = path.join(root, 'pages/index/index.wxml')
 const wxml = fs.readFileSync(wxmlPath, 'utf8')
 // 包括动态 src 分支中的本地素材，避免开发工具编译后才发现资源缺失。
 const assetPaths = [...new Set(wxml.match(/\/assets\/[\w./-]+\.(?:png|jpg|jpeg|webp)/g) || [])]
-for (let value = 1; value <= 6; value++) assetPaths.push(`/assets/dice/die-${value}.png`)
+for (let value = 1; value <= 6; value++) assetPaths.push(`/assets/dice-perspective/die-${value}.png`)
 assetPaths.push('/assets/audio/dice-shake.wav')
 for (const assetPath of assetPaths) {
   if (!fs.existsSync(path.join(root, assetPath.slice(1)))) {

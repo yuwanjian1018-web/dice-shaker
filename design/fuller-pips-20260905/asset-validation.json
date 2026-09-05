@@ -1,0 +1,62 @@
+[
+  {
+    "value": 1,
+    "bounds": {
+      "left": 110,
+      "top": 107,
+      "width": 324,
+      "height": 334
+    },
+    "bytes": 72929
+  },
+  {
+    "value": 2,
+    "bounds": {
+      "left": 89,
+      "top": 107,
+      "width": 330,
+      "height": 334
+    },
+    "bytes": 73812
+  },
+  {
+    "value": 3,
+    "bounds": {
+      "left": 79,
+      "top": 107,
+      "width": 318,
+      "height": 334
+    },
+    "bytes": 71825
+  },
+  {
+    "value": 4,
+    "bounds": {
+      "left": 107,
+      "top": 69,
+      "width": 319,
+      "height": 340
+    },
+    "bytes": 71814
+  },
+  {
+    "value": 5,
+    "bounds": {
+      "left": 90,
+      "top": 73,
+      "width": 320,
+      "height": 336
+    },
+    "bytes": 76989
+  },
+  {
+    "value": 6,
+    "bounds": {
+      "left": 66,
+      "top": 73,
+      "width": 320,
+      "height": 336
+    },
+    "bytes": 78465
+  }
+]

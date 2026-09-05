@@ -35,7 +35,7 @@ function createDieModel(value, index) {
   return {
     id: `die-${index}`,
     value,
-    image: `/assets/dice/die-${value}.png`,
+    image: `/assets/dice-perspective/die-${value}.png`,
     color: value === 1 || value === 4 ? 'red' : 'blue',
     pips: PIP_KEYS.map((key) => ({
       key,

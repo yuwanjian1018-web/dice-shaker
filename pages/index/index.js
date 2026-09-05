@@ -1,38 +1,50 @@
 const { createDiceGame } = require('../../utils/game')
+const { createDiceLayout, dicePositionStyle } = require('../../utils/dice-layout')
 const { createShakeDetector } = require('../../utils/shake-detector')
 
-// 5 颗恢复参考图的后方1颗、左右各1颗、前方2颗；6 颗保持3+3。
-// 仅调整中心位置，保留现有骰子素材、角度和大小。
-const DICE_POSITIONS = {
-  1: [[50, 51]], 2: [[32, 51], [68, 51]],
-  3: [[50, 21], [30, 77], [70, 77]],
-  4: [[31, 23], [69, 23], [31, 79], [69, 79]],
-  5: [[50, 14], [21, 43], [79, 43], [37, 82], [64, 82]],
-  6: [[19, 23], [50, 19], [81, 23], [19, 77], [50, 81], [81, 77]]
-}
+const LID_TRAVEL_RPX = 308
+const MOTION_SETTING_KEY = 'dice-shaker-motion-enabled'
 
 Page({
   data: {
     phase: 'covered', isBusy: false, isLidOpen: false, hasRolled: false,
     isLocked: false, diceCount: 5, actionLabel: '摇一摇', dice: [],
-    settingsOpen: false, draftDiceCount: 5, soundError: false
+    settingsOpen: false, draftDiceCount: 5, soundError: false,
+    motionEnabled: false, draftMotionEnabled: false, motionError: false,
+    lidProgress: 0, lidStyle: 'transform:translate3d(0,0,0);'
   },
 
   onLoad() {
     this._visible = true
     this._previousPhase = 'covered'
     this._detector = createShakeDetector()
+    try {
+      const motionEnabled = typeof wx !== 'undefined' && wx.getStorageSync && wx.getStorageSync(MOTION_SETTING_KEY) === true
+      this.setData({ motionEnabled: Boolean(motionEnabled), draftMotionEnabled: Boolean(motionEnabled) })
+    } catch (error) {}
+    let windowWidth = 375
+    try {
+      const windowInfo = typeof wx !== 'undefined' && wx.getWindowInfo ? wx.getWindowInfo() : null
+      if (windowInfo && Number.isFinite(windowInfo.windowWidth)) windowWidth = windowInfo.windowWidth
+    } catch (error) {}
+    this._lidTravelPx = LID_TRAVEL_RPX * windowWidth / 750
     this.initSound()
     this.game = createDiceGame({ onChange: (state) => this.applyGameState(state) })
     this.applyGameState(this.game.getState())
   },
 
   applyGameState(state) {
-    const positions = DICE_POSITIONS[state.diceCount]
+    const rolled = this._lastRollRevision !== state.rollRevision
+    if (!this._diceLayout || this._diceLayout.length !== state.diceCount || rolled) {
+      this._diceLayout = createDiceLayout(state.diceCount)
+    }
+    this._lastRollRevision = state.rollRevision
     const dice = state.dice.map((die, index) => ({
-      ...die, position: `left:${positions[index][0]}%;top:${positions[index][1]}%;z-index:${Math.round(positions[index][1])};`
+      ...die,
+      position: dicePositionStyle(this._diceLayout[index])
     }))
-    this.setData({ ...state, dice })
+    const lidOffsetRpx = Math.round(state.lidProgress * LID_TRAVEL_RPX * 10) / 10
+    this.setData({ ...state, dice, lidStyle: `transform:translate3d(0,-${lidOffsetRpx}rpx,0);` })
     if (state.phase === 'shaking' && this._previousPhase !== 'shaking' && this._visible) {
       if (this._audio) { this._audio.stop(); this._audio.play() }
       if (typeof wx !== 'undefined' && wx.vibrateShort) wx.vibrateShort({ type: 'medium', fail() {} })
@@ -65,25 +77,58 @@ Page({
   onShow() {
     this._visible = true
     if (this._detector) this._detector.reset()
-    if (typeof wx === 'undefined' || !wx.onAccelerometerChange || this._accelerometerListener) return
-    this._accelerometerListener = (sample) => this.handleAcceleration(sample)
-    wx.onAccelerometerChange(this._accelerometerListener)
-    wx.startAccelerometer({ interval: 'game', fail() {} })
+    this.syncMotionSensor()
+  },
+
+  saveMotionPreference() {
+    try {
+      if (typeof wx !== 'undefined' && wx.setStorageSync) wx.setStorageSync(MOTION_SETTING_KEY, this.data.motionEnabled)
+    } catch (error) {}
+  },
+
+  stopMotionSensor() {
+    const listener = this._accelerometerListener
+    this._accelerometerListener = null
+    if (this._detector) this._detector.reset()
+    if (!listener || typeof wx === 'undefined') return
+    if (wx.offAccelerometerChange) wx.offAccelerometerChange(listener)
+    if (wx.stopAccelerometer) wx.stopAccelerometer({ fail() {} })
+  },
+
+  syncMotionSensor() {
+    if (!this.data.motionEnabled || !this._visible || this.data.settingsOpen) {
+      this.stopMotionSensor()
+      return
+    }
+    if (this._accelerometerListener) return
+    const listener = sample => this.handleAcceleration(sample)
+    this._accelerometerListener = listener
+    const fail = () => {
+      if (this._accelerometerListener !== listener) return
+      this.stopMotionSensor()
+      this.setData({ motionEnabled: false, draftMotionEnabled: false, motionError: true })
+      this.saveMotionPreference()
+    }
+    if (typeof wx === 'undefined' || !wx.onAccelerometerChange || !wx.startAccelerometer) {
+      fail()
+      return
+    }
+    try {
+      wx.onAccelerometerChange(listener)
+      wx.startAccelerometer({ interval: 'game', fail })
+    } catch (error) { fail() }
   },
 
   handleAcceleration(sample) {
-    if (!this.game || !this._visible || this.data.settingsOpen || this.data.isLocked || this.data.isBusy) {
+    if (!this.data.motionEnabled || !this.game || !this._visible || this.data.settingsOpen || this.data.isLocked || this.data.isBusy) {
       if (this._detector) this._detector.reset()
       return
     }
-    if (this._detector && this._detector.push(sample)) this.handleRoll()
+    if (this._detector && this._detector.push(sample)) this.game.startRoll()
   },
 
   handleRoll() {
-    if (this.game && this._visible && !this.data.settingsOpen) this.game.startRoll()
-  },
-  handleToggleLid() {
-    if (this.game && !this.data.settingsOpen) this.game.toggleLid()
+    if (!this.data.motionEnabled && this.game && this._visible && !this.data.settingsOpen) this.game.startRoll()
   },
   handleToggleLock() {
     if (!this.game || this.data.settingsOpen) return
@@ -94,32 +139,36 @@ Page({
   handleTouchStart(event) {
     if (this.data.isBusy || this.data.settingsOpen) return
     const touch = event.touches && event.touches[0]
-    this._touchStart = touch ? { x: touch.clientX, y: touch.clientY } : null
+    const state = this.game && this.game.getState()
+    this._touchStart = touch && state ? { y: touch.clientY, progress: state.lidProgress } : null
+  },
+  updateLidFromTouch(touch) {
+    const start = this._touchStart
+    if (!start || !touch || !this.game || this.data.isBusy || this.data.settingsOpen) return
+    const progress = start.progress + (start.y - touch.clientY) / this._lidTravelPx
+    this.game.setLidProgress(progress)
+  },
+  handleTouchMove(event) {
+    this.updateLidFromTouch(event.touches && event.touches[0])
   },
   handleTouchEnd(event) {
-    const touch = event.changedTouches && event.changedTouches[0]
-    const start = this._touchStart
+    this.updateLidFromTouch(event.changedTouches && event.changedTouches[0])
     this._touchStart = null
-    if (!start || !touch || !this.game || this.data.isBusy || this.data.settingsOpen) return
-    const dx = touch.clientX - start.x
-    const dy = touch.clientY - start.y
-    if (Math.abs(dy) < 35 || Math.abs(dy) < Math.abs(dx) * 1.2) return
-    this._lastSwipe = Date.now()
-    if ((dy < 0 && !this.data.isLidOpen) || (dy > 0 && this.data.isLidOpen)) this.game.toggleLid()
-  },
-  handleCupTap() {
-    // 手势结束后部分基础库仍派发 tap，避免一次滑动触发两次开合。
-    if (this._lastSwipe && Date.now() - this._lastSwipe < 450) return
-    this.handleToggleLid()
   },
   handleTouchCancel() { this._touchStart = null },
 
   handleOpenSettings() {
     if (this.data.isBusy) return
-    this.setData({ settingsOpen: true, draftDiceCount: this.data.diceCount })
-    if (this._detector) this._detector.reset()
+    this.setData({ settingsOpen: true, draftDiceCount: this.data.diceCount, draftMotionEnabled: this.data.motionEnabled })
+    this.syncMotionSensor()
   },
-  handleCloseSettings() { this.setData({ settingsOpen: false }) },
+  handleCloseSettings() {
+    this.setData({ settingsOpen: false })
+    this.syncMotionSensor()
+  },
+  handleMotionChange(event) {
+    this.setData({ draftMotionEnabled: Boolean(event.detail.value) })
+  },
   handleDecreaseCount() {
     if (!this.data.isLocked && this.data.draftDiceCount > 1) this.setData({ draftDiceCount: this.data.draftDiceCount - 1 })
   },
@@ -128,7 +177,9 @@ Page({
   },
   handleSaveSettings() {
     if (this.game && !this.data.isLocked) this.game.setDiceCount(this.data.draftDiceCount)
-    this.setData({ settingsOpen: false })
+    this.setData({ settingsOpen: false, motionEnabled: this.data.draftMotionEnabled, motionError: false })
+    this.saveMotionPreference()
+    this.syncMotionSensor()
   },
   preventMove() {},
 
@@ -136,12 +187,7 @@ Page({
     this._visible = false
     if (this.game) this.game.cancelMotion()
     this.stopSound()
-    if (this._detector) this._detector.reset()
-    if (this._accelerometerListener && typeof wx !== 'undefined') {
-      wx.offAccelerometerChange(this._accelerometerListener)
-      wx.stopAccelerometer({ fail() {} })
-      this._accelerometerListener = null
-    }
+    this.stopMotionSensor()
   },
   onUnload() {
     this.onHide()

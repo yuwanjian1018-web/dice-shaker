@@ -1,22 +1,28 @@
 <view class="page-shell">
-  <button class="settings-button icon-button {{isBusy ? 'is-busy' : ''}}" bindtap="handleOpenSettings" disabled="{{isBusy}}" hover-class="control--pressed" aria-label="设置骰子个数"><image class="icon-image" src="/assets/icons/gear-light.png" aria-hidden="true"></image></button>
-  <view class="stage" bindtouchstart="handleTouchStart" bindtouchend="handleTouchEnd" bindtouchcancel="handleTouchCancel">
+  <button class="settings-button icon-button {{isBusy ? 'is-busy' : ''}}" bindtap="handleOpenSettings" disabled="{{isBusy}}" hover-class="control--pressed" aria-label="设置骰子个数和体感"><image class="icon-image" src="/assets/icons/gear-light.png" aria-hidden="true"></image></button>
+  <view class="stage" bindtouchstart="handleTouchStart" catchtouchmove="handleTouchMove" bindtouchend="handleTouchEnd" bindtouchcancel="handleTouchCancel">
     <view class="table">
-      <image class="tray-art" src="/assets/tray-black.png" mode="aspectFit" aria-hidden="true"></image>
-      <view class="dice-tray {{isLidOpen ? 'dice-tray--visible' : ''}}" aria-hidden="{{!isLidOpen}}">
-        <image wx:for="{{dice}}" wx:key="id" wx:for-item="die" class="die" style="{{die.position}}" src="{{die.image}}" mode="aspectFit" aria-label="{{isLidOpen ? '第' + (index + 1) + '颗骰子，顶面' + die.value + '点' : ''}}"></image>
+      <view class="shaker-size">
+        <view class="shaker-motion shaker-motion--{{phase}}">
+          <view class="tray-scene">
+            <image class="tray-art" src="/assets/tray-black-lowrim.png" mode="scaleToFill" aria-hidden="true"></image>
+            <view class="dice-tray {{lidProgress === 0 ? 'dice-tray--covered' : ''}}" aria-hidden="{{lidProgress < 0.85}}">
+              <view wx:for="{{dice}}" wx:key="id" wx:for-item="die" class="die" style="{{die.position}}">
+                <view class="die-shadow"></view>
+                <image class="die-image" src="{{die.image}}" mode="aspectFit" aria-label="{{lidProgress >= 0.85 ? '第' + (index + 1) + '颗骰子，顶面' + die.value + '点' : ''}}"></image>
+              </view>
+            </view>
+            <image class="tray-front" src="/assets/tray-black-lowrim.png" mode="scaleToFill" aria-hidden="true"></image>
+          </view>
+          <view class="cup-control cup-control--{{phase}}" style="{{lidStyle}}" role="slider" aria-label="{{isBusy ? '正在摇动，请稍候' : lidActionLabel}}"><image class="cup-art" src="/assets/cup-black.png" mode="aspectFit" aria-hidden="true"></image></view>
+        </view>
       </view>
-      <button class="cup-toggle cup-toggle--{{phase}}" bindtap="handleCupTap" disabled="{{isBusy}}" hover-class="none" aria-label="{{isBusy ? '正在摇动，请稍候' : lidActionLabel}}"><image class="cup-art" src="/assets/cup-black.png" mode="aspectFit" aria-hidden="true"></image></button>
     </view>
   </view>
-  <button class="gesture-hint" bindtap="handleToggleLid" disabled="{{isBusy}}" hover-class="control--pressed" aria-label="{{lidActionLabel}}">
-    <image class="gesture-icon" src="{{isLidOpen ? '/assets/icons/caret-double-down-light.png' : '/assets/icons/caret-double-up-light.png'}}" aria-hidden="true"></image>
-    <text>{{isBusy ? (phase === 'opening' ? '揭盖中…' : (phase === 'closing' ? '合盖中…' : '摇动中…')) : (isLidOpen ? '下划合盖' : '上划揭盖')}}</text>
-  </button>
   <view class="actions">
-    <button class="roll-button {{isLocked ? 'roll-button--locked' : ''}} {{isBusy ? 'is-busy' : ''}}" bindtap="handleRoll" disabled="{{isBusy || isLocked}}" hover-class="control--pressed">{{isLocked ? '已锁定' : actionLabel}}</button>
-    <button class="lock-button icon-button {{isLocked ? 'lock-button--locked' : ''}}" bindtap="handleToggleLock" hover-class="control--pressed" aria-label="{{isLocked ? '已锁定，点击解锁后可摇骰子' : '未锁定，点击锁定摇骰子'}}"><image class="lock-image" src="{{isLocked ? '/assets/icons/lock-light.png' : '/assets/icons/lock-open-light.png'}}" aria-hidden="true"></image></button>
-    <text class="action-note" aria-live="polite">{{isLocked ? '点右侧锁解锁' : (soundError ? '音效暂不可用，请检查设备声音' : '')}}</text>
+    <button wx:if="{{!motionEnabled}}" class="roll-button {{isLocked ? 'roll-button--locked' : ''}} {{isBusy ? 'is-busy' : ''}}" bindtap="handleRoll" disabled="{{isBusy || isLocked}}" hover-class="control--pressed">{{isLocked ? '已锁定' : actionLabel}}</button>
+    <button class="lock-button {{motionEnabled ? 'lock-button--primary' : 'icon-button'}} {{isLocked ? 'lock-button--locked' : ''}}" bindtap="handleToggleLock" hover-class="control--pressed" aria-label="{{isLocked ? '已锁定，点击解锁后可摇骰子' : '未锁定，点击锁定摇骰子'}}"><image class="lock-image" src="{{isLocked ? '/assets/icons/lock-light.png' : '/assets/icons/lock-open-light.png'}}" aria-hidden="true"></image><text wx:if="{{motionEnabled}}">{{isLocked ? '解锁' : '锁定'}}</text></button>
+    <text class="action-note" aria-live="polite">{{isLocked ? (motionEnabled ? '已锁定，点击上方按钮解锁' : '点右侧锁解锁') : (motionError ? '体感暂不可用，已切换为按钮' : (soundError ? '音效暂不可用，请检查设备声音' : (motionEnabled ? (isBusy ? '正在摇动…' : '晃动手机摇骰子') : '')))}}</text>
   </view>
   <view wx:if="{{settingsOpen}}" class="settings-overlay" catchtouchmove="preventMove">
     <view class="settings-scrim" bindtap="handleCloseSettings"></view>
@@ -30,6 +36,10 @@
         <button class="stepper-button {{draftDiceCount === 6 || isLocked ? 'is-disabled' : ''}}" bindtap="handleIncreaseCount" disabled="{{draftDiceCount === 6 || isLocked}}" hover-class="control--pressed" aria-label="增加一颗骰子"><image class="stepper-icon" src="/assets/icons/plus-light.png" aria-hidden="true"></image></button>
       </view>
       <text class="count-range">{{isLocked ? '请先解锁，再调整个数' : '1–6 颗'}}</text>
+      <view class="motion-setting">
+        <view class="motion-copy"><text class="motion-label">体感摇骰</text><text class="motion-description">{{draftMotionEnabled ? '晃动手机摇骰子' : '点击按钮摇骰子'}}</text></view>
+        <switch class="motion-switch" checked="{{draftMotionEnabled}}" bindchange="handleMotionChange" color="#797f79" aria-label="体感摇骰，开启后通过晃动手机摇骰子"></switch>
+      </view>
       <button class="done-button" bindtap="handleSaveSettings" hover-class="control--pressed">完成</button>
     </view>
   </view>

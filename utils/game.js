@@ -2,7 +2,6 @@ const { createDieModel, rollDice } = require('./dice')
 
 const COVER_DURATION_MS = 280
 const SHAKE_DURATION_MS = 1200
-const OPEN_DURATION_MS = 420
 
 function toDiceModels(values) {
   return values.map((value, index) => createDieModel(value, index))
@@ -20,11 +19,13 @@ function createDiceGame(options = {}) {
     phase: 'covered',
     isBusy: false,
     isLidOpen: false,
+    lidProgress: 0,
     hasRolled: false,
+    rollRevision: 0,
     isLocked: false,
     diceCount: 5,
     actionLabel: '摇一摇',
-    lidActionLabel: '打开盖子',
+    lidActionLabel: '向上拖动打开骰盅',
     lidStateLabel: '已合盖',
     statusText: '摇一摇，再打开看看',
     dice: toDiceModels(initialValues)
@@ -60,6 +61,7 @@ function createDiceGame(options = {}) {
       phase: 'covering',
       isBusy: true,
       isLidOpen: false,
+      lidProgress: 0,
       actionLabel: '摇动中',
       lidActionLabel: '请稍候',
       lidStateLabel: '准备摇动',
@@ -81,9 +83,11 @@ function createDiceGame(options = {}) {
           phase: 'covered',
           isBusy: false,
           isLidOpen: false,
+          lidProgress: 0,
           hasRolled: true,
+          rollRevision: state.rollRevision + 1,
           actionLabel: '再摇一次',
-          lidActionLabel: '打开盖子',
+          lidActionLabel: '向上拖动打开骰盅',
           lidStateLabel: '已合盖',
           statusText: '摇好了，打开看看吧',
           dice: toDiceModels(values)
@@ -94,48 +98,22 @@ function createDiceGame(options = {}) {
     return true
   }
 
-  function toggleLid() {
-    if (disposed || state.isBusy) return false
+  function setLidProgress(progress) {
+    if (disposed || state.isBusy || !Number.isFinite(progress)) return false
+    const normalized = Math.round(Math.min(1, Math.max(0, progress)) * 1000) / 1000
+    const phase = normalized === 0 ? 'covered' : (normalized === 1 ? 'revealed' : 'lid-moving')
+    const isLidOpen = normalized === 1
 
-    if (state.isLidOpen) {
-      update({
-        phase: 'closing',
-        isBusy: true,
-        isLidOpen: false,
-        lidActionLabel: '合盖中',
-        lidStateLabel: '正在合盖',
-        statusText: '盖好，留一点小悬念'
-      })
-      after(COVER_DURATION_MS, () => {
-        update({
-          phase: 'covered',
-          isBusy: false,
-          lidActionLabel: '打开盖子',
-          lidStateLabel: '已合盖',
-          statusText: state.hasRolled ? '随时打开，还是刚才的骰子' : '摇一摇，再打开看看'
-        })
-      })
-    } else {
-      update({
-        phase: 'opening',
-        isBusy: true,
-        isLidOpen: true,
-        lidActionLabel: '开盖中',
-        lidStateLabel: '正在开盖',
-        statusText: '小小惊喜，慢慢揭晓'
-      })
-      after(OPEN_DURATION_MS, () => {
-        update({
-          phase: 'revealed',
-          isBusy: false,
-          lidActionLabel: '合上盖子',
-          lidStateLabel: '已开盖',
-          statusText: state.hasRolled ? '看看这次的手气' : '准备好了，就摇一摇'
-        })
-      })
-    }
-
-    // 开合只改变盖子状态，不调用随机数，也不改变本轮骰面。
+    update({
+      phase,
+      isLidOpen,
+      lidProgress: normalized,
+      lidActionLabel: normalized === 0
+        ? '向上拖动打开骰盅'
+        : (normalized === 1 ? '向下拖动合上骰盅' : '拖动调整骰盅开合位置'),
+      lidStateLabel: normalized === 0 ? '已合盖' : (normalized === 1 ? '已完全打开' : `已打开 ${Math.round(normalized * 100)}%`),
+      statusText: state.hasRolled ? '拖动骰盅查看本轮结果' : '准备好了，就摇一摇'
+    })
     return true
   }
 
@@ -149,10 +127,13 @@ function createDiceGame(options = {}) {
     if (disposed) return false
     timers.forEach((id) => cancel(id))
     timers.clear()
+    const phase = state.lidProgress === 0 ? 'covered' : (state.lidProgress === 1 ? 'revealed' : 'lid-moving')
     update({
-      phase: state.isLidOpen ? 'revealed' : 'covered', isBusy: false,
+      phase, isBusy: false,
       actionLabel: state.hasRolled ? '再摇一次' : '摇一摇',
-      lidActionLabel: state.isLidOpen ? '合上盖子' : '打开盖子'
+      lidActionLabel: state.lidProgress === 0
+        ? '向上拖动打开骰盅'
+        : (state.lidProgress === 1 ? '向下拖动合上骰盅' : '拖动调整骰盅开合位置')
     })
     return true
   }
@@ -180,14 +161,13 @@ function createDiceGame(options = {}) {
     cancelMotion,
     toggleLock,
     setDiceCount,
+    setLidProgress,
     startRoll,
-    toggleLid
   }
 }
 
 module.exports = {
   COVER_DURATION_MS,
   SHAKE_DURATION_MS,
-  OPEN_DURATION_MS,
   createDiceGame
 }
