@@ -1,8 +1,9 @@
+<wxs module="sheetGesture" src="./settings-sheet.wxs"></wxs>
 <view class="page-shell">
   <button class="settings-button icon-button {{isBusy ? 'is-busy' : ''}}" bindtap="handleOpenSettings" disabled="{{isBusy}}" hover-class="control--pressed" aria-label="设置骰子个数和体感"><image class="icon-image" src="/assets/icons/gear-light.png" aria-hidden="true"></image></button>
   <view class="stage" bindtouchstart="handleTouchStart" catchtouchmove="handleTouchMove" bindtouchend="handleTouchEnd" bindtouchcancel="handleTouchCancel">
-    <canvas id="shaker-canvas" type="webgl" class="shaker-canvas {{modelReady ? 'shaker-canvas--ready' : ''}} {{settingsOpen && modelSnapshot ? 'shaker-canvas--hidden' : ''}}" binderror="handleCanvasError" role="slider" aria-label="{{isBusy ? '正在摇动，请稍候' : lidActionLabel}}"></canvas>
-    <image wx:if="{{settingsOpen && modelSnapshot}}" class="model-snapshot" src="{{modelSnapshot}}" mode="scaleToFill" aria-hidden="true"></image>
+    <canvas id="shaker-canvas" type="webgl" class="shaker-canvas {{modelReady ? 'shaker-canvas--ready' : ''}} {{modelSnapshotReady ? 'shaker-canvas--snapshot-covered' : ''}}" binderror="handleCanvasError" role="slider" aria-label="{{isBusy ? '正在摇动，请稍候' : lidActionLabel}}"></canvas>
+    <image wx:if="{{modelSnapshot}}" class="model-snapshot" src="{{modelSnapshot}}" mode="scaleToFill" fade-in="{{false}}" bindload="handleModelSnapshotLoad" binderror="handleModelSnapshotError" aria-hidden="true"></image>
     <view wx:if="{{!modelReady}}" class="model-status">
       <text>{{modelError ? '模型加载失败，请重试' : '正在准备骰盅…'}}</text>
       <button wx:if="{{modelError}}" class="model-retry" bindtap="init3D">重试</button>
@@ -14,23 +15,22 @@
     <button class="lock-button {{motionEnabled ? 'lock-button--primary' : 'icon-button'}} {{isLocked ? 'lock-button--locked' : ''}}" bindtap="handleToggleLock" hover-class="control--pressed" aria-label="{{isLocked ? '已锁定，点击解锁后可摇骰子' : '未锁定，点击锁定摇骰子'}}"><image class="lock-image" src="{{isLocked ? '/assets/icons/lock-light.png' : '/assets/icons/lock-open-light.png'}}" aria-hidden="true"></image><text wx:if="{{motionEnabled}}">{{isLocked ? '解锁' : '锁定'}}</text></button>
     <text class="action-note" aria-live="polite">{{isLocked ? (motionEnabled ? '已锁定，点击上方按钮解锁' : '点右侧锁解锁') : (motionError ? '体感暂不可用，已切换为按钮' : (soundError ? '音效暂不可用，请检查设备声音' : (motionEnabled ? (isBusy ? '正在摇动…' : '晃动手机摇骰子') : '')))}}</text>
   </view>
-  <view wx:if="{{settingsOpen}}" class="settings-overlay" catchtouchmove="preventMove">
+  <view wx:if="{{settingsOpen}}" class="settings-overlay {{settingsClosing ? 'settings-overlay--closing' : ''}}" catchtouchmove="preventMove">
     <view class="settings-scrim" bindtap="handleCloseSettings"></view>
-    <view class="settings-sheet" role="dialog" aria-modal="true" aria-label="设置">
+    <view class="settings-sheet {{settingsClosing ? 'settings-sheet--closing' : ''}}" threshold="{{settingsCloseDistancePx}}" change:threshold="{{sheetGesture.thresholdChanged}}" closing="{{settingsClosing}}" change:closing="{{sheetGesture.closingChanged}}" bindtouchstart="{{sheetGesture.touchstart}}" bindtouchmove="{{sheetGesture.touchmove}}" bindtouchend="{{sheetGesture.touchend}}" bindtouchcancel="{{sheetGesture.touchcancel}}" bindtransitionend="{{sheetGesture.transitionEnd}}" role="dialog" aria-modal="true" aria-label="设置">
       <view class="sheet-handle"></view>
-      <view class="sheet-heading"><text>设置</text><button class="close-button" bindtap="handleCloseSettings" hover-class="control--pressed" aria-label="关闭设置，不保存改动"><image class="close-icon" src="/assets/icons/x-light.png" aria-hidden="true"></image></button></view>
+      <view class="sheet-heading"><text>设置</text><button class="close-button" bindtap="handleCloseSettings" hover-class="control--pressed" aria-label="关闭设置"><image class="close-icon" src="/assets/icons/x-light.png" aria-hidden="true"></image></button></view>
       <text class="count-label">骰子个数</text>
       <view class="count-stepper">
-        <button id="decrease-count" class="stepper-button {{draftDiceCount === 1 || isLocked ? 'is-disabled' : ''}}" bindtap="handleDecreaseCount" disabled="{{draftDiceCount === 1 || isLocked}}" hover-class="control--pressed" aria-label="减少一颗骰子"><image class="stepper-icon" src="/assets/icons/minus-light.png" aria-hidden="true"></image></button>
-        <text class="count-value" aria-live="polite">{{draftDiceCount}}</text>
-        <button id="increase-count" class="stepper-button {{draftDiceCount === 6 || isLocked ? 'is-disabled' : ''}}" bindtap="handleIncreaseCount" disabled="{{draftDiceCount === 6 || isLocked}}" hover-class="control--pressed" aria-label="增加一颗骰子"><image class="stepper-icon" src="/assets/icons/plus-light.png" aria-hidden="true"></image></button>
+        <button id="decrease-count" class="stepper-button {{diceCount === 1 || isLocked ? 'is-disabled' : ''}}" bindtap="handleDecreaseCount" disabled="{{diceCount === 1 || isLocked}}" hover-class="control--pressed" aria-label="减少一颗骰子"><image class="stepper-icon" src="/assets/icons/minus-light.png" aria-hidden="true"></image></button>
+        <text class="count-value" aria-live="polite">{{diceCount}}</text>
+        <button id="increase-count" class="stepper-button {{diceCount === 6 || isLocked ? 'is-disabled' : ''}}" bindtap="handleIncreaseCount" disabled="{{diceCount === 6 || isLocked}}" hover-class="control--pressed" aria-label="增加一颗骰子"><image class="stepper-icon" src="/assets/icons/plus-light.png" aria-hidden="true"></image></button>
       </view>
       <text class="count-range">{{isLocked ? '请先解锁，再调整个数' : '1–6 颗'}}</text>
       <view class="motion-setting">
-        <view class="motion-copy"><text class="motion-label">体感摇骰</text><text class="motion-description">{{draftMotionEnabled ? '晃动手机摇骰子' : '点击按钮摇骰子'}}</text></view>
-        <switch class="motion-switch" checked="{{draftMotionEnabled}}" bindchange="handleMotionChange" color="#797f79" aria-label="体感摇骰，开启后通过晃动手机摇骰子"></switch>
+        <view class="motion-copy"><text class="motion-label">体感摇骰</text><text class="motion-description">{{motionEnabled ? '晃动手机摇骰子' : '点击按钮摇骰子'}}</text></view>
+        <switch class="motion-switch" checked="{{motionEnabled}}" bindchange="handleMotionChange" color="#797f79" aria-label="体感摇骰，开启后通过晃动手机摇骰子"></switch>
       </view>
-      <button class="done-button" bindtap="handleSaveSettings" hover-class="control--pressed">完成</button>
     </view>
   </view>
 </view>

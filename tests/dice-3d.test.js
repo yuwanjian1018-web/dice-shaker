@@ -2,10 +2,20 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { createLayout, fits, separated } = require('../utils/dice-3d-layout')
 const { createScopedThreejs } = require('../vendor/threejs-miniprogram/index')
-const { createAssembly } = require('../utils/shaker-3d')
+const { createAssembly, choosePixelRatio, DETAIL_PIXEL_BUDGET, MOTION_PIXEL_BUDGET } = require('../utils/shaker-3d')
 const model = require('../assets/models/cup-scene')
 const fs = require('node:fs')
 const path = require('node:path')
+
+test('settled rendering uses a sharper pixel budget while motion remains bounded', () => {
+  const detail = choosePixelRatio(3, 375, 600, DETAIL_PIXEL_BUDGET)
+  const motion = choosePixelRatio(3, 375, 600, MOTION_PIXEL_BUDGET)
+  const reducedMotion = choosePixelRatio(3, 375, 600, MOTION_PIXEL_BUDGET, .7)
+  assert.equal(detail, 3)
+  assert.ok(motion > 2 && motion < detail)
+  assert.ok(reducedMotion >= 1 && reducedMotion < motion)
+  assert.equal(choosePixelRatio(1, 375, 600, DETAIL_PIXEL_BUDGET), 1)
+})
 
 test('one through six dice fit inside the real tray and do not intersect', () => {
   let seed = 9271

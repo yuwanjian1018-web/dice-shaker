@@ -6,14 +6,18 @@ const { createShakerScene } = require('../../utils/shaker-3d')
 // Finger travel controls the model's sampled opening animation.
 const LID_TRAVEL_RPX = 340
 const MOTION_SETTING_KEY = 'dice-shaker-motion-enabled'
+const DICE_COUNT_SETTING_KEY = 'dice-shaker-dice-count'
+const SETTINGS_DISMISS_FALLBACK_MS = 360
+const SETTINGS_CLOSE_DISTANCE_RPX = 160
 
 Page({
   data: {
     phase: 'covered', isBusy: false, isLidOpen: false, hasRolled: false,
     isLocked: false, diceCount: 5, actionLabel: '摇一摇', dice: [],
-    settingsOpen: false, draftDiceCount: 5, soundError: false,
-    motionEnabled: false, draftMotionEnabled: false, motionError: false,
-    lidProgress: 0, modelReady: false, modelError: false, modelSnapshot: '', diceResultLabel: '', resultsVisible: false
+    settingsOpen: false, settingsClosing: false, settingsCloseDistancePx: 80,
+    soundError: false, motionEnabled: false, motionError: false,
+    lidProgress: 0, modelReady: false, modelError: false,
+    modelSnapshot: '', modelSnapshotReady: false, diceResultLabel: '', resultsVisible: false
   },
 
   onLoad() {
@@ -22,8 +26,17 @@ Page({
     this._previousPhase = 'covered'
     this._detector = createShakeDetector()
     try {
+      const deviceInfo = typeof wx !== 'undefined' && wx.getDeviceInfo
+        ? wx.getDeviceInfo()
+        : (typeof wx !== 'undefined' && wx.getSystemInfoSync ? wx.getSystemInfoSync() : null)
+      this._useSettingsSnapshot = Boolean(deviceInfo && deviceInfo.platform === 'devtools')
+    } catch (error) { this._useSettingsSnapshot = false }
+    let initialDiceCount = 5
+    try {
       const motionEnabled = typeof wx !== 'undefined' && wx.getStorageSync && wx.getStorageSync(MOTION_SETTING_KEY) === true
-      this.setData({ motionEnabled: Boolean(motionEnabled), draftMotionEnabled: Boolean(motionEnabled) })
+      const savedDiceCount = typeof wx !== 'undefined' && wx.getStorageSync ? wx.getStorageSync(DICE_COUNT_SETTING_KEY) : 5
+      if (Number.isInteger(savedDiceCount) && savedDiceCount >= 1 && savedDiceCount <= 6) initialDiceCount = savedDiceCount
+      this.setData({ motionEnabled: Boolean(motionEnabled) })
     } catch (error) {}
     let windowWidth = 375
     try {
@@ -31,8 +44,10 @@ Page({
       if (windowInfo && Number.isFinite(windowInfo.windowWidth)) windowWidth = windowInfo.windowWidth
     } catch (error) {}
     this._lidTravelPx = LID_TRAVEL_RPX * windowWidth / 750
+    this.setData({ settingsCloseDistancePx: SETTINGS_CLOSE_DISTANCE_RPX * windowWidth / 750 })
     this.initSound()
     this.game = createDiceGame({ onChange: (state) => this.applyGameState(state) })
+    if (initialDiceCount !== 5) this.game.setDiceCount(initialDiceCount)
     this.applyGameState(this.game.getState())
   },
 
@@ -86,7 +101,7 @@ Page({
         })
         if (generation !== this._sceneGeneration || this._destroyed) { scene.dispose(); return }
         this._scene3D = scene
-        if (!this._visible || this.data.settingsOpen) scene.suspend()
+        if (!this._visible) scene.suspend()
         scene.update(this.game.getState())
         this.setData({ modelReady: true, modelError: false })
       } catch (error) {
@@ -109,6 +124,7 @@ Page({
     })
     const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
     this._lidTravelPx = LID_TRAVEL_RPX * info.windowWidth / 750
+    this.setData({ settingsCloseDistancePx: SETTINGS_CLOSE_DISTANCE_RPX * info.windowWidth / 750 })
   },
 
   initSound() {
@@ -135,7 +151,7 @@ Page({
 
   onShow() {
     this._visible = true
-    if (this._scene3D && !this.data.settingsOpen) this._scene3D.resume()
+    if (this._scene3D) this._scene3D.resume()
     if (this._detector) this._detector.reset()
     this.syncMotionSensor()
   },
@@ -156,7 +172,7 @@ Page({
   },
 
   syncMotionSensor() {
-    if (!this.data.motionEnabled || !this._visible || this.data.settingsOpen) {
+    if (!this.data.motionEnabled || !this._visible || this.data.settingsOpen || this._settingsPending) {
       this.stopMotionSensor()
       return
     }
@@ -166,7 +182,7 @@ Page({
     const fail = () => {
       if (this._accelerometerListener !== listener) return
       this.stopMotionSensor()
-      this.setData({ motionEnabled: false, draftMotionEnabled: false, motionError: true })
+      this.setData({ motionEnabled: false, motionError: true })
       this.saveMotionPreference()
     }
     if (typeof wx === 'undefined' || !wx.onAccelerometerChange || !wx.startAccelerometer) {
@@ -180,7 +196,7 @@ Page({
   },
 
   handleAcceleration(sample) {
-    if (!this.data.motionEnabled || !this.game || !this._visible || this.data.settingsOpen || this.data.isLocked || this.data.isBusy) {
+    if (!this.data.motionEnabled || !this.game || !this._visible || this.data.settingsOpen || this._settingsPending || this.data.isLocked || this.data.isBusy) {
       if (this._detector) this._detector.reset()
       return
     }
@@ -188,23 +204,24 @@ Page({
   },
 
   handleRoll() {
-    if (!this.data.motionEnabled && this.game && this._visible && !this.data.settingsOpen) this.game.startRoll()
+    if (!this.data.motionEnabled && this.game && this._visible && !this.data.settingsOpen && !this._settingsPending) this.game.startRoll()
   },
   handleToggleLock() {
-    if (!this.game || this.data.settingsOpen) return
+    if (!this.game || this.data.settingsOpen || this._settingsPending) return
     this.game.toggleLock()
     if (this._detector) this._detector.reset()
   },
 
   handleTouchStart(event) {
-    if (this.data.isBusy || this.data.settingsOpen) return
+    if (this.data.isBusy || this.data.settingsOpen || this._settingsPending) return
     const touch = event.touches && event.touches[0]
     const state = this.game && this.game.getState()
     this._touchStart = touch && state ? { y: touch.clientY, progress: state.lidProgress } : null
+    if (this._touchStart && this._scene3D) this._scene3D.setInteractionActive(true)
   },
   updateLidFromTouch(touch) {
     const start = this._touchStart
-    if (!start || !touch || !this.game || this.data.isBusy || this.data.settingsOpen) return
+    if (!start || !touch || !this.game || this.data.isBusy || this.data.settingsOpen || this._settingsPending) return
     const progress = start.progress + (start.y - touch.clientY) / this._lidTravelPx
     this.game.setLidProgress(progress)
   },
@@ -214,42 +231,106 @@ Page({
   handleTouchEnd(event) {
     this.updateLidFromTouch(event.changedTouches && event.changedTouches[0])
     this._touchStart = null
+    if (this._scene3D) this._scene3D.setInteractionActive(false)
   },
-  handleTouchCancel() { this._touchStart = null },
+
+  saveDiceCountPreference(count) {
+    try {
+      if (typeof wx !== 'undefined' && wx.setStorageSync) wx.setStorageSync(DICE_COUNT_SETTING_KEY, count)
+    } catch (error) {}
+  },
+  handleTouchCancel() {
+    this._touchStart = null
+    if (this._scene3D) this._scene3D.setInteractionActive(false)
+  },
 
   handleOpenSettings() {
-    if (this.data.isBusy) return
-    let modelSnapshot = ''
-    if (this._scene3D) {
+    if (this.data.isBusy || this.data.settingsOpen || this._settingsPending) return
+    if (this._snapshotReleaseTimer) clearTimeout(this._snapshotReleaseTimer)
+    this._snapshotReleaseTimer = null
+    // Real phones support same-layer composition, so they keep the live WebGL
+    // canvas throughout. DevTools needs a decoded image above its native canvas;
+    // preload it before the sheet appears so there is no blank or flashing frame.
+    if (this._useSettingsSnapshot && this._scene3D) {
+      let modelSnapshot = ''
       try { modelSnapshot = this._scene3D.snapshot() } catch (error) { console.warn('模型背景快照不可用', error.message) }
-      this._scene3D.suspend()
+      if (modelSnapshot) {
+        this._settingsPending = true
+        this.setData({ modelSnapshot, modelSnapshotReady: false })
+        this.syncMotionSensor()
+        if (this._snapshotLoadTimer) clearTimeout(this._snapshotLoadTimer)
+        this._snapshotLoadTimer = setTimeout(() => this.finishSettingsSnapshotLoad(false), 500)
+        return
+      }
     }
-    this.setData({ settingsOpen: true, modelSnapshot, draftDiceCount: this.data.diceCount, draftMotionEnabled: this.data.motionEnabled })
+    this.setData({ settingsOpen: true, settingsClosing: false, modelSnapshot: '', modelSnapshotReady: false })
     this.syncMotionSensor()
+  },
+  handleModelSnapshotLoad() {
+    if (!this._settingsPending) return
+    const reveal = () => this.finishSettingsSnapshotLoad(true)
+    if (typeof wx !== 'undefined' && wx.nextTick) wx.nextTick(reveal)
+    else setTimeout(reveal, 0)
+  },
+  handleModelSnapshotError() { this.finishSettingsSnapshotLoad(false) },
+  finishSettingsSnapshotLoad(ready) {
+    if (!this._settingsPending) return
+    this._settingsPending = false
+    if (this._snapshotLoadTimer) clearTimeout(this._snapshotLoadTimer)
+    this._snapshotLoadTimer = null
+    this.setData({
+      settingsOpen: true, settingsClosing: false,
+      modelSnapshot: ready ? this.data.modelSnapshot : '', modelSnapshotReady: Boolean(ready)
+    }, () => this.syncMotionSensor())
   },
   handleCloseSettings() {
-    this.setData({ settingsOpen: false, modelSnapshot: '' }, () => { if (this._scene3D) this._scene3D.resume() })
-    this.syncMotionSensor()
+    this.dismissSettings()
+  },
+  dismissSettings() {
+    if (!this.data.settingsOpen || this.data.settingsClosing) return
+    this.setData({ settingsClosing: true }, () => {
+      if (!this.data.settingsClosing || this._destroyed) return
+      if (this._settingsCloseTimer) clearTimeout(this._settingsCloseTimer)
+      this._settingsCloseTimer = setTimeout(() => this.finishSettingsDismiss(), SETTINGS_DISMISS_FALLBACK_MS)
+    })
+  },
+  handleSettingsGestureRelease(result) {
+    if (result && result.shouldClose) this.dismissSettings()
+  },
+  finishSettingsDismiss() {
+    if (!this.data.settingsOpen || !this.data.settingsClosing) return
+    if (this._settingsCloseTimer) clearTimeout(this._settingsCloseTimer)
+    this._settingsCloseTimer = null
+    const releaseSnapshot = Boolean(this.data.modelSnapshot)
+    if (releaseSnapshot && this._scene3D && this._scene3D.redraw) this._scene3D.redraw()
+    this.setData({ settingsOpen: false, settingsClosing: false, modelSnapshotReady: false }, () => {
+      this.syncMotionSensor()
+      if (!releaseSnapshot) return
+      this._snapshotReleaseTimer = setTimeout(() => {
+        this._snapshotReleaseTimer = null
+        if (!this.data.settingsOpen && !this._settingsPending) this.setData({ modelSnapshot: '' })
+      }, 80)
+    })
   },
   handleMotionChange(event) {
-    this.setData({ draftMotionEnabled: Boolean(event.detail.value) })
+    this.setData({ motionEnabled: Boolean(event.detail.value), motionError: false }, () => {
+      this.saveMotionPreference()
+      this.syncMotionSensor()
+    })
   },
   handleDecreaseCount() {
-    if (!this.data.isLocked && this.data.draftDiceCount > 1) this.setData({ draftDiceCount: this.data.draftDiceCount - 1 })
+    const count = this.data.diceCount - 1
+    if (this.game && !this.data.isLocked && count >= 1 && this.game.setDiceCount(count)) this.saveDiceCountPreference(count)
   },
   handleIncreaseCount() {
-    if (!this.data.isLocked && this.data.draftDiceCount < 6) this.setData({ draftDiceCount: this.data.draftDiceCount + 1 })
-  },
-  handleSaveSettings() {
-    if (this.game && !this.data.isLocked) this.game.setDiceCount(this.data.draftDiceCount)
-    this.setData({ settingsOpen: false, modelSnapshot: '', motionEnabled: this.data.draftMotionEnabled, motionError: false }, () => { if (this._scene3D) this._scene3D.resume() })
-    this.saveMotionPreference()
-    this.syncMotionSensor()
+    const count = this.data.diceCount + 1
+    if (this.game && !this.data.isLocked && count <= 6 && this.game.setDiceCount(count)) this.saveDiceCountPreference(count)
   },
   preventMove() {},
 
   onHide() {
     this._visible = false
+    this._touchStart = null
     if (this._scene3D) this._scene3D.suspend()
     if (this.game) this.game.cancelMotion()
     this.stopSound()
@@ -258,6 +339,13 @@ Page({
   onUnload() {
     this.onHide()
     this._destroyed = true
+    if (this._settingsCloseTimer) clearTimeout(this._settingsCloseTimer)
+    this._settingsCloseTimer = null
+    if (this._snapshotLoadTimer) clearTimeout(this._snapshotLoadTimer)
+    this._snapshotLoadTimer = null
+    if (this._snapshotReleaseTimer) clearTimeout(this._snapshotReleaseTimer)
+    this._snapshotReleaseTimer = null
+    this._settingsPending = false
     this._sceneGeneration = (this._sceneGeneration || 0) + 1
     if (this._scene3D) this._scene3D.dispose()
     this._scene3D = null

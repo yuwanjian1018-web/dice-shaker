@@ -9,10 +9,16 @@
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const check = (ok, name) => { if (!ok) throw new Error(name); passed.push(name) };
   const positions = () => JSON.stringify(p._scene3D.inspect().dice.map(die => die.position));
-  const setMotion = value => {
+  const openSettings = async () => {
     p.handleOpenSettings();
+    for (let tries = 0; tries < 30 && !p.data.settingsOpen; tries++) await wait(20);
+    if (!p.data.settingsOpen) throw new Error('settings did not open');
+  };
+  const setMotion = async value => {
+    await openSettings();
     p.handleMotionChange({ detail: { value } });
-    p.handleSaveSettings();
+    p.handleCloseSettings();
+    return wait(400);
   };
   const query = selector => new Promise(resolve => wx.createSelectorQuery().selectAll(selector).boundingClientRect(resolve).exec());
   const shake = async () => {
@@ -23,20 +29,21 @@
   try {
     p.game.cancelMotion();
     p.handleCloseSettings();
+    await wait(400);
     if (p.data.isLocked) p.handleToggleLock();
-    setMotion(false);
+    await setMotion(false);
     await wait(150);
     const button = (await query('.roll-button'))[0];
     check(Boolean(button) && !p._accelerometerListener, 'button mode renders roll and stops sensor');
     await shake();
     check(!p.data.isBusy, 'button mode ignores motion samples');
-    p.handleOpenSettings();
+    await openSettings();
     p.handleMotionChange({ detail: { value: true } });
+    check(p.data.motionEnabled, 'motion mode auto-saves before settings closes');
     p.handleCloseSettings();
-    check(!p.data.motionEnabled, 'closing settings cancels mode draft');
-    setMotion(true);
-    await wait(150);
-    check(p.data.motionEnabled && Boolean(p._accelerometerListener), 'saving motion starts sensor');
+    await wait(400);
+    check(Boolean(p._accelerometerListener), 'closing settings starts saved motion sensor');
+    check(p.data.motionEnabled && Boolean(p._accelerometerListener), 'saved motion mode remains active');
     check(wx.getStorageSync('dice-shaker-motion-enabled') === true, 'motion preference persisted');
     check((await query('.roll-button')).length === 0, 'roll button removed in motion mode');
     const locks = await query('.lock-button');
@@ -57,15 +64,16 @@
     p.game.setLidProgress(1);
     p.game.setLidProgress(0.4);
     check(positions() === rolled, 'manual reveal preserves layout');
-    p.handleOpenSettings();
+    await openSettings();
     check(!p._accelerometerListener, 'settings pause motion listener');
     p.handleCloseSettings();
+    await wait(400);
     check(Boolean(p._accelerometerListener), 'closing settings resumes motion listener');
     p.onHide();
     check(!p._accelerometerListener && !p.data.isBusy, 'hide releases sensor and cancels motion');
     p.onShow();
     check(Boolean(p._accelerometerListener), 'show resumes motion listener');
-    setMotion(false);
+    await setMotion(false);
     await wait(150);
     check((await query('.roll-button')).length === 1 && (await query('.lock-button--primary')).length === 0, 'disabling motion restores button and side lock');
     for (let count = 1; count <= 6; count += 1) {
@@ -79,9 +87,10 @@
   } finally {
     p.game.cancelMotion();
     p.handleCloseSettings();
+    await wait(400);
     if (p.data.isLocked) p.handleToggleLock();
     p.game.setDiceCount(originalCount);
-    setMotion(originalMotion);
+    await setMotion(originalMotion);
     if (originalLock) p.handleToggleLock();
     p.game.setLidProgress(1);
   };

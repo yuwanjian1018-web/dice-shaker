@@ -1,0 +1,107 @@
+var CLOSE_TRANSITION = 'transform 0.22s cubic-bezier(0.32, 0.72, 0, 1)'
+var REBOUND_TRANSITION = 'transform 0.18s cubic-bezier(0.22, 1, 0.36, 1)'
+
+function touchY(touch) {
+  if (!touch) return null
+  if (typeof touch.pageY === 'number') return touch.pageY
+  if (typeof touch.clientY === 'number') return touch.clientY
+  return null
+}
+
+function setOffset(instance, offset, transition) {
+  instance.setStyle({
+    animation: 'none',
+    transform: 'translate3d(0, ' + offset + 'px, 0)',
+    transition: transition || 'none'
+  })
+}
+
+function animateClose(instance, state) {
+  if (state.closing) return
+  state.closing = true
+  state.dragging = false
+  setOffset(instance, state.offset || 0, 'none')
+  var finish = function() {
+    instance.setStyle({
+      animation: 'none',
+      transform: 'translate3d(0, 100%, 0)',
+      transition: CLOSE_TRANSITION
+    })
+  }
+  if (instance.requestAnimationFrame) instance.requestAnimationFrame(finish)
+  else finish()
+}
+
+function touchstart(event) {
+  var instance = event.instance
+  var state = instance.getState()
+  var y = touchY(event.touches && event.touches[0])
+  if (state.closing || y === null) return
+  state.dragging = true
+  state.startY = y
+  state.offset = 0
+  setOffset(instance, 0, 'none')
+}
+
+function touchmove(event) {
+  var instance = event.instance
+  var state = instance.getState()
+  var y = touchY(event.touches && event.touches[0])
+  if (!state.dragging || state.closing || y === null) return
+  state.offset = Math.max(0, y - state.startY)
+  setOffset(instance, state.offset, 'none')
+  return false
+}
+
+function touchend(event, ownerInstance) {
+  var instance = event.instance
+  var state = instance.getState()
+  if (!state.dragging || state.closing) return
+  var y = touchY(event.changedTouches && event.changedTouches[0])
+  var endOffset = y === null ? 0 : Math.max(0, y - state.startY)
+  state.offset = Math.max(state.offset || 0, endOffset)
+  state.dragging = false
+  if (state.offset >= (state.threshold || 80)) {
+    animateClose(instance, state)
+    ownerInstance.callMethod('handleSettingsGestureRelease', { shouldClose: true, offset: state.offset })
+    return false
+  }
+  state.offset = 0
+  setOffset(instance, 0, REBOUND_TRANSITION)
+  ownerInstance.callMethod('handleSettingsGestureRelease', { shouldClose: false, offset: 0 })
+}
+
+function touchcancel(event, ownerInstance) {
+  var instance = event.instance
+  var state = instance.getState()
+  if (!state.dragging || state.closing) return
+  state.dragging = false
+  state.offset = 0
+  setOffset(instance, 0, REBOUND_TRANSITION)
+  ownerInstance.callMethod('handleSettingsGestureRelease', { shouldClose: false, offset: 0 })
+}
+
+function thresholdChanged(newValue, oldValue, ownerInstance, instance) {
+  var state = instance.getState()
+  if (typeof newValue === 'number' && newValue > 0) state.threshold = newValue
+}
+
+function closingChanged(newValue, oldValue, ownerInstance, instance) {
+  var state = instance.getState()
+  if (newValue) animateClose(instance, state)
+}
+
+function transitionEnd(event, ownerInstance) {
+  var state = event.instance.getState()
+  if (state.closing) ownerInstance.callMethod('finishSettingsDismiss')
+}
+
+module.exports = {
+  touchstart: touchstart,
+  touchmove: touchmove,
+  touchend: touchend,
+  touchcancel: touchcancel,
+  thresholdChanged: thresholdChanged,
+  closingChanged: closingChanged,
+  transitionEnd: transitionEnd
+}

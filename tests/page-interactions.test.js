@@ -1,17 +1,48 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const vm = require('node:vm')
 const modulePath = require.resolve('../pages/index/index')
 const { COVER_DURATION_MS, SHAKE_DURATION_MS } = require('../utils/game')
+const SETTINGS_DISMISS_FALLBACK_MS = 360
+
+function loadSettingsGesture() {
+  const source = fs.readFileSync(path.resolve(__dirname, '../pages/index/settings-sheet.wxs'), 'utf8')
+  const sandbox = { module: { exports: {} }, exports: {} }
+  vm.runInNewContext(source, sandbox)
+  return sandbox.module.exports
+}
+
+function gestureHarness(threshold = 80) {
+  const state = {}
+  const styles = []
+  const calls = []
+  const instance = {
+    getState: () => state,
+    setStyle: style => styles.push({ ...style }),
+    requestAnimationFrame: callback => callback()
+  }
+  const owner = { callMethod: (method, args) => calls.push({ method, args }) }
+  const gesture = loadSettingsGesture()
+  gesture.thresholdChanged(threshold, undefined, owner, instance)
+  return { gesture, instance, owner, state, styles, calls }
+}
 
 function setup(t, options = {}) {
   const previousPage = global.Page
   const previousWx = global.wx
   const calls = { play: 0, stop: 0, destroy: 0, listen: 0, unlisten: 0, sensorStart: [], sensorStop: 0 }
-  const storage = { 'dice-shaker-motion-enabled': options.motionEnabled }
+  const storage = {
+    'dice-shaker-motion-enabled': options.motionEnabled,
+    'dice-shaker-dice-count': options.diceCount
+  }
   const audio = { stop() { calls.stop += 1 }, play() { calls.play += 1 }, destroy() { calls.destroy += 1 }, onError(fn) { this.error = fn }, onPlay(fn) { this.played = fn } }
   global.wx = {
     createInnerAudioContext: () => audio,
     getWindowInfo: () => ({ windowWidth: 375 }),
+    getDeviceInfo: () => ({ platform: options.platform || 'ios' }),
+    nextTick: callback => callback(),
     getStorageSync: key => storage[key],
     setStorageSync: (key, value) => { storage[key] = value },
     vibrateShort() {},
@@ -24,7 +55,7 @@ function setup(t, options = {}) {
   global.Page = value => { definition = value }
   delete require.cache[modulePath]
   require(modulePath)
-  const page = { ...definition, data: { ...definition.data }, setData(patch) { this.data = { ...this.data, ...patch } } }
+  const page = { ...definition, data: { ...definition.data }, setData(patch, callback) { this.data = { ...this.data, ...patch }; if (callback) callback() } }
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 10000 })
   page.onLoad()
   page.onShow()
@@ -55,21 +86,106 @@ test('sound begins with the shake, stops on completion, and lock prevents restar
   assert.equal(calls.play, 1)
 })
 
-test('settings draft cancels or applies, clamps boundaries and blocks background rolls', t => {
-  const { page } = setup(t)
+test('settings changes save immediately, clamp boundaries and survive page reloads', t => {
+  const { page, storage } = setup(t)
   page.handleOpenSettings()
   page.handleIncreaseCount()
   page.handleIncreaseCount()
-  assert.equal(page.data.draftDiceCount, 6)
+  assert.equal(page.data.diceCount, 6)
+  assert.equal(page.game.getState().diceCount, 6)
+  assert.equal(storage['dice-shaker-dice-count'], 6)
   page.handleRoll()
   assert.equal(page.data.isBusy, false)
   page.handleCloseSettings()
-  assert.equal(page.data.diceCount, 5)
+  assert.equal(page.data.settingsOpen, true)
+  assert.equal(page.data.settingsClosing, true)
+  t.mock.timers.tick(SETTINGS_DISMISS_FALLBACK_MS)
+  assert.equal(page.data.settingsOpen, false)
+  assert.equal(page.data.diceCount, 6)
   page.handleOpenSettings()
   for (let index = 0; index < 8; index += 1) page.handleDecreaseCount()
-  assert.equal(page.data.draftDiceCount, 1)
-  page.handleSaveSettings()
   assert.equal(page.data.diceCount, 1)
+  assert.equal(page.game.getState().diceCount, 1)
+  assert.equal(storage['dice-shaker-dice-count'], 1)
+  page.onUnload()
+  page.onLoad()
+  page.onShow()
+  assert.equal(page.data.diceCount, 1)
+  assert.equal(page.game.getState().diceCount, 1)
+})
+
+test('opening settings keeps the live WebGL scene in place without snapshot or suspension', t => {
+  const { page } = setup(t)
+  const calls = []
+  page._scene3D = {
+    update() {},
+    snapshot() { calls.push('snapshot'); return 'data:image/png;base64,unused' },
+    suspend() { calls.push('suspend') },
+    resume() { calls.push('resume') },
+    dispose() { calls.push('dispose') }
+  }
+  page.handleOpenSettings()
+  assert.equal(page.data.settingsOpen, true)
+  assert.deepEqual(calls, [])
+  page.handleCloseSettings()
+  t.mock.timers.tick(SETTINGS_DISMISS_FALLBACK_MS)
+  assert.deepEqual(calls, [])
+})
+
+test('settings markup has no completion action and only hides canvas after a decoded snapshot', () => {
+  const markup = fs.readFileSync(path.resolve(__dirname, '../pages/index/index.wxml'), 'utf8')
+  assert.doesNotMatch(markup, /handleSaveSettings|done-button/)
+  assert.match(markup, /modelSnapshotReady \? 'shaker-canvas--snapshot-covered'/)
+  assert.match(markup, /fade-in="\{\{false\}\}" bindload="handleModelSnapshotLoad"/)
+})
+
+test('DevTools preloads its canvas snapshot before swapping layers and releases it after close', t => {
+  const { page } = setup(t, { platform: 'devtools', motionEnabled: true })
+  const calls = []
+  page._scene3D = {
+    update() {},
+    snapshot() { calls.push('snapshot'); return 'data:image/png;base64,ready' },
+    redraw() { calls.push('redraw') },
+    suspend() {}, resume() {}, dispose() {}
+  }
+  page.handleOpenSettings()
+  assert.equal(page.data.settingsOpen, false)
+  assert.equal(page._accelerometerListener, null)
+  assert.equal(page.data.modelSnapshotReady, false)
+  assert.equal(page.data.modelSnapshot, 'data:image/png;base64,ready')
+  page.handleModelSnapshotLoad()
+  assert.equal(page.data.settingsOpen, true)
+  assert.equal(page.data.modelSnapshotReady, true)
+  page.handleCloseSettings()
+  t.mock.timers.tick(SETTINGS_DISMISS_FALLBACK_MS)
+  assert.equal(page.data.settingsOpen, false)
+  assert.equal(page.data.modelSnapshotReady, false)
+  assert.equal(page.data.modelSnapshot, 'data:image/png;base64,ready')
+  t.mock.timers.tick(80)
+  assert.equal(page.data.modelSnapshot, '')
+  assert.deepEqual(calls, ['snapshot', 'redraw'])
+})
+
+test('settings sheet gesture moves the whole view in WXS and closes from its released position', () => {
+  const rebound = gestureHarness(80)
+  rebound.gesture.touchstart({ instance: rebound.instance, touches: [{ pageY: 200 }] }, rebound.owner)
+  rebound.gesture.touchmove({ instance: rebound.instance, touches: [{ pageY: 250 }] }, rebound.owner)
+  assert.equal(rebound.styles.at(-1).transform, 'translate3d(0, 50px, 0)')
+  rebound.gesture.touchend({ instance: rebound.instance, changedTouches: [{ pageY: 250 }] }, rebound.owner)
+  assert.equal(rebound.styles.at(-1).transform, 'translate3d(0, 0px, 0)')
+  assert.equal(rebound.calls.at(-1).args.shouldClose, false)
+  assert.equal(rebound.calls.at(-1).args.offset, 0)
+
+  const dismiss = gestureHarness(80)
+  dismiss.gesture.touchstart({ instance: dismiss.instance, touches: [{ pageY: 200 }] }, dismiss.owner)
+  dismiss.gesture.touchmove({ instance: dismiss.instance, touches: [{ pageY: 300 }] }, dismiss.owner)
+  dismiss.gesture.touchend({ instance: dismiss.instance, changedTouches: [{ pageY: 300 }] }, dismiss.owner)
+  assert.equal(dismiss.styles.at(-1).transform, 'translate3d(0, 100%, 0)')
+  assert.equal(dismiss.calls.at(-1).method, 'handleSettingsGestureRelease')
+  assert.equal(dismiss.calls.at(-1).args.shouldClose, true)
+  assert.equal(dismiss.calls.at(-1).args.offset, 100)
+  dismiss.gesture.transitionEnd({ instance: dismiss.instance }, dismiss.owner)
+  assert.equal(dismiss.calls.at(-1).method, 'finishSettingsDismiss')
 })
 
 test('vertical drag tracks continuously and remains at an intermediate position after release', t => {
@@ -144,10 +260,11 @@ function shake(page, t) {
   page.handleAcceleration({ x: -1.6, y: 0, z: 1 })
 }
 
-function setMotion(page, value) {
+function setMotion(page, t, value) {
   page.handleOpenSettings()
   page.handleMotionChange({ detail: { value } })
-  page.handleSaveSettings()
+  page.handleCloseSettings()
+  t.mock.timers.tick(SETTINGS_DISMISS_FALLBACK_MS)
 }
 
 test('button mode is the default and ignores motion without starting the sensor', t => {
@@ -160,18 +277,15 @@ test('button mode is the default and ignores motion without starting the sensor'
   assert.equal(page.data.phase, 'covering')
 })
 
-test('motion settings cancel or persist on save, including across page reloads', t => {
+test('motion setting saves immediately and persists across page reloads', t => {
   const { page, calls, storage } = setup(t)
   page.handleOpenSettings()
   page.handleMotionChange({ detail: { value: true } })
-  page.handleCloseSettings()
-  assert.equal(page.data.motionEnabled, false)
-  assert.equal(calls.listen, 0)
-  page.handleOpenSettings()
-  assert.equal(page.data.draftMotionEnabled, false)
-  page.handleCloseSettings()
-  setMotion(page, true)
+  assert.equal(page.data.motionEnabled, true)
   assert.equal(storage['dice-shaker-motion-enabled'], true)
+  assert.equal(calls.listen, 0)
+  page.handleCloseSettings()
+  t.mock.timers.tick(SETTINGS_DISMISS_FALLBACK_MS)
   assert.equal(calls.listen, 1)
   page.onUnload()
   page.onLoad()
@@ -189,7 +303,7 @@ test('motion and button triggers are mutually exclusive and disabling detaches t
   t.mock.timers.tick(COVER_DURATION_MS)
   t.mock.timers.tick(SHAKE_DURATION_MS)
   const oldListener = page._accelerometerListener
-  setMotion(page, false)
+  setMotion(page, t, false)
   assert.equal(page._accelerometerListener, null)
   assert.equal(calls.sensorStop, 1)
   oldListener({ x: 4, y: 0, z: 1 })
@@ -209,8 +323,10 @@ test('motion mode respects lock and settings while maintaining one listener on r
   page.handleOpenSettings()
   assert.equal(page._accelerometerListener, null)
   page.handleIncreaseCount()
-  assert.equal(page.data.draftDiceCount, 5)
+  assert.equal(page.data.diceCount, 5)
   page.handleCloseSettings()
+  assert.equal(calls.listen, 1)
+  t.mock.timers.tick(SETTINGS_DISMISS_FALLBACK_MS)
   assert.equal(calls.listen, 2)
   page.onHide()
   shake(page, t)

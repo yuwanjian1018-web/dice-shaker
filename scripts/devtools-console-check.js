@@ -1,14 +1,21 @@
 // 在微信开发者工具 Console 中执行此 IIFE。使用真实页面处理函数和真实音频上下文，不伪造播放状态。
-// 会改变当前娱乐骰局和数量（无持久化数据），运行后重新编译可恢复默认 5 颗。
+// 会临时改变当前娱乐骰局和数量，结束时恢复进入检查前的设置。
 (async () => {
   const p = getCurrentPages()[0]
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
   const values = () => p.data.dice.map(die => die.value).join(',')
   const originalMotionEnabled = p.data.motionEnabled
-  const setMotion = value => {
+  const originalDiceCount = p.data.diceCount
+  const openSettings = async () => {
     p.handleOpenSettings()
+    for (let tries = 0; tries < 30 && !p.data.settingsOpen; tries++) await wait(20)
+    if (!p.data.settingsOpen) throw new Error('settings did not open')
+  }
+  const setMotion = async value => {
+    await openSettings()
     p.handleMotionChange({ detail: { value } })
-    p.handleSaveSettings()
+    p.handleCloseSettings()
+    await wait(400)
   }
   let passed = 0
   let plays = 0
@@ -21,9 +28,10 @@
   try {
     console.log('DICE_VIEWPORT', JSON.stringify(wx.getWindowInfo()))
     p.handleCloseSettings()
+    await wait(400)
     if (p.data.isLocked) p.handleToggleLock()
     await wait(1600)
-    setMotion(false)
+    await setMotion(false)
     const before = values()
     p.handleToggleLock(); p.handleRoll(); await wait(1700)
     check(p.data.isLocked && !p.data.isBusy && values() === before && plays === 0, 'locked click preserves values and does not play')
@@ -41,21 +49,21 @@
     await wait(450); p.handleToggleLock(); await wait(1300)
     check(p.data.isLocked && !p.data.isBusy && values() === rolled && p._audio.paused, 'lock during shake cancels result and stops audio')
     p.handleToggleLock()
-    p.handleOpenSettings(); p.handleIncreaseCount(); p.handleCloseSettings()
-    check(p.data.diceCount === p.game.getState().diceCount, 'cancel settings does not apply draft')
+    await openSettings(); p.handleIncreaseCount(); p.handleCloseSettings(); await wait(400)
+    check(p.data.diceCount === p.game.getState().diceCount, 'count change saves before settings closes')
     for (const count of [1, 6, 5]) {
-      p.handleOpenSettings()
-      while (p.data.draftDiceCount > count) p.handleDecreaseCount()
-      while (p.data.draftDiceCount < count) p.handleIncreaseCount()
-      p.handleSaveSettings()
-      check(p.data.dice.length === count && p.data.diceCount === count, 'count ' + count + ' applied')
+      await openSettings()
+      while (p.data.diceCount > count) p.handleDecreaseCount()
+      while (p.data.diceCount < count) p.handleIncreaseCount()
+      check(p.data.dice.length === count && p.data.diceCount === count, 'count ' + count + ' auto-saved')
+      p.handleCloseSettings(); await wait(400)
     }
     const motion = async () => {
       p.handleAcceleration({x:0,y:0,z:1}); await wait(100)
       p.handleAcceleration({x:1.6,y:0,z:1}); await wait(100)
       p.handleAcceleration({x:-1.6,y:0,z:1})
     }
-    setMotion(true)
+    await setMotion(true)
     p.handleToggleLock(); await motion()
     check(!p.data.isBusy, 'locked sensor samples do not roll')
     p.handleToggleLock(); await motion()
@@ -65,5 +73,11 @@
     p.onShow()
     console.log('DICE_QA COMPLETE', passed, 'PASS', 'audioPlay=' + plays, 'audioStop=' + stops)
   } catch (error) { console.error('DICE_QA FAILED', error.message) }
-  finally { p.game.cancelMotion(); setMotion(originalMotionEnabled); p._audio.offPlay(onPlay); p._audio.offStop(onStop) }
+  finally {
+    p.game.cancelMotion()
+    p.game.setDiceCount(originalDiceCount)
+    p.saveDiceCountPreference(originalDiceCount)
+    await setMotion(originalMotionEnabled)
+    p._audio.offPlay(onPlay); p._audio.offStop(onStop)
+  }
 })()

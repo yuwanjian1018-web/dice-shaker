@@ -2,6 +2,16 @@ const { FACE_NORMALS, createLayout } = require('./dice-3d-layout')
 const model = require('../assets/models/cup-scene')
 const { COVER_DURATION_MS } = require('./game')
 
+const DETAIL_PIXEL_BUDGET = 2200000
+const MOTION_PIXEL_BUDGET = 1150000
+const MAX_DETAIL_PIXEL_RATIO = 3
+
+function choosePixelRatio(pixelRatio, width, height, pixelBudget, scale) {
+  const deviceRatio = Math.max(1, Math.min(Number(pixelRatio) || 1, MAX_DETAIL_PIXEL_RATIO))
+  const budgetRatio = Math.sqrt(pixelBudget / Math.max(1, width * height))
+  return Math.max(1, Math.min(deviceRatio, budgetRatio) * (scale === undefined ? 1 : scale))
+}
+
 // Loader deliberately supports the static meshes, PBR maps and sampled TRS tracks
 // in our checked-in model. No DOM, network requests, Blob URLs or remote assets.
 function createAssembly(THREE, binary, loadImage) {
@@ -155,18 +165,33 @@ function createAssembly(THREE, binary, loadImage) {
 async function createShakerScene({ THREE, canvas, width, height, pixelRatio, readBinary, loadImage }) {
   let renderer, assembly, environment
   try {
-    // preserveDrawingBuffer makes iOS copy the whole surface every frame; the
-    // settings snapshot instead reads the buffer back inside its drawing task.
+    // The canvas remains the one composited surface for its entire lifetime.
+    // Avoid preserveDrawingBuffer because it makes iOS copy that surface each frame.
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' })
-    // Resolution is the first thing traded when frames slip, then the shadow map.
-    // Phones vary far too much for one fixed budget, and iOS reports no device tier.
-    const QUALITY = [1, .84, .7, .58], SHADOW_SIZES = [1024, 1024, 512, 512], PIXEL_BUDGET = 1150000
-    const basePixelRatio = Math.max(1, Math.min(pixelRatio || 1, 2))
+    let antialiasActive = false
+    try {
+      const attributes = renderer.getContext().getContextAttributes()
+      antialiasActive = Boolean(attributes && attributes.antialias)
+    } catch (error) {}
+    // A settled view is supersampled for clean die edges. Continuous movement
+    // uses the old, lower pixel budget and can step down further if frames slip.
+    const QUALITY = [1, .84, .7, .58], SHADOW_SIZES = [1024, 1024, 512, 512]
     let quality = 0, shadowLight = null, viewWidth = width, viewHeight = height
+    let dynamicResolution = false, resolutionDirty = true, appliedPixelRatio = 0
     function applyResolution() {
-      const ceiling = Math.min(basePixelRatio, Math.sqrt(PIXEL_BUDGET / Math.max(1, viewWidth * viewHeight)))
-      renderer.setPixelRatio(Math.max(1, ceiling * QUALITY[quality]))
+      const budget = dynamicResolution ? MOTION_PIXEL_BUDGET : DETAIL_PIXEL_BUDGET
+      const nextPixelRatio = choosePixelRatio(pixelRatio, viewWidth, viewHeight, budget, dynamicResolution ? QUALITY[quality] : 1)
+      if (!resolutionDirty && Math.abs(nextPixelRatio - appliedPixelRatio) < .001) return
+      renderer.setPixelRatio(nextPixelRatio)
       renderer.setSize(viewWidth, viewHeight, false)
+      appliedPixelRatio = nextPixelRatio
+      resolutionDirty = false
+    }
+    function useDynamicResolution(active) {
+      active = Boolean(active)
+      if (active === dynamicResolution) return
+      dynamicResolution = active
+      resolutionDirty = true
     }
     function applyShadowQuality() {
       if (!shadowLight) return
@@ -189,6 +214,12 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     renderer.setClearColor(0, 0)
     assembly = createAssembly(THREE, await readBinary(), loadImage)
     await assembly.ready
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 4
+    const textureAnisotropy = Math.max(1, Math.min(8, maxAnisotropy || 1))
+    for (const texture of assembly.resources.textures) {
+      texture.anisotropy = textureAnisotropy
+      texture.needsUpdate = true
+    }
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(38, width / height, .1, 100)
     scene.add(assembly.root)
     scene.add(new THREE.HemisphereLight(0xf6f4ee, 0x596474, .28))
@@ -234,6 +265,7 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     const extra = dice[0].clone(true); extra.name = 'Dice 6'; base.add(extra); dice.push(extra)
     let progress = 0, state = {}, layout, layoutRevision, lastCount, visible = true, disposed = false, raf = null
     let closing = null, shakeStart = 0
+    let interactionActive = false
     let previousFrame = 0, frameTotal = 0, frameCount = 0, calmWindows = 0
     const point = new THREE.Vector3(), direction = new THREE.Vector3(0, .5, Math.sqrt(.75))
     const up = new THREE.Vector3(0, direction.z, -direction.y)
@@ -260,6 +292,7 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     const targetDepth = target.dot(direction)
     function resize(w, h) {
       viewWidth = w; viewHeight = h
+      resolutionDirty = true
       applyResolution()
       camera.aspect = w / h; camera.updateProjectionMatrix()
       const tanY = Math.tan(camera.fov * Math.PI / 360), tanX = tanY * camera.aspect
@@ -276,6 +309,8 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     resize(width, height)
     function draw() {
       if (!visible || disposed) return
+      useDynamicResolution(interactionActive || closing || state.phase === 'shaking')
+      applyResolution()
       // A fully seated opaque lid hides every die. Skip those covered triangles
       // during the shake while retaining all dice objects and their exact values.
       for (const die of dice) for (const mesh of die.children) mesh.visible = progress > .001
@@ -315,7 +350,8 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
       if (average > 21 && quality < QUALITY.length - 1) { quality += 1; calmWindows = 0 }
       else if (average < 17.4 && quality > 0 && (calmWindows += 1) >= 3) { quality -= 1; calmWindows = 0 }
       else return
-      applyResolution(); applyShadowQuality()
+      resolutionDirty = true
+      applyShadowQuality()
     }
     function schedule() {
       if (disposed || !visible || raf !== null) return
@@ -345,7 +381,20 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
       // frame pick up the newest progress renders once per refresh, not per event.
       schedule()
     }
-    function suspend() { visible = false; previousFrame = 0; if (raf !== null) canvas.cancelAnimationFrame(raf); raf = null }
+    function setInteractionActive(active) {
+      active = Boolean(active)
+      if (active === interactionActive) return
+      interactionActive = active
+      if (!active) schedule()
+    }
+    function suspend() {
+      visible = false
+      interactionActive = false
+      useDynamicResolution(false)
+      previousFrame = 0
+      if (raf !== null) canvas.cancelAnimationFrame(raf)
+      raf = null
+    }
     function resume() {
       if (disposed) return
       visible = true
@@ -365,16 +414,16 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     }
     function inspect() {
       return { progress, count: dice.filter(d => d.visible).length, triangles: renderer.info.render.triangles,
-        quality, pixelRatio: renderer.getPixelRatio(), shadowSize: shadowLight.shadow.mapSize.width,
+        quality, pixelRatio: renderer.getPixelRatio(), resolutionMode: dynamicResolution ? 'motion' : 'detail',
+        shadowSize: shadowLight.shadow.mapSize.width, textureAnisotropy, antialiasActive,
         points: state.dice && state.dice.map(d => d.value), phase: state.phase, disposed,
         dice: dice.filter(d => d.visible).map((d, i) => ({ value: state.dice[i].value, position: d.position.toArray(),
           localTop: new THREE.Vector3(...FACE_NORMALS[state.dice[i].value]).applyQuaternion(d.quaternion).toArray() })),
         lidPosition: lid.position.toArray(), baseQuaternion: base.quaternion.toArray() }
     }
     assembly.pose(0)
-    return { update, resize(w, h) { resize(w, h); draw() }, suspend, resume, dispose, inspect,
-      // The drawing buffer only clears once the frame reaches the compositor, so
-      // reading it back inside this task needs no preserved buffer to copy from.
+    return { update, resize(w, h) { resize(w, h); draw() }, setInteractionActive, redraw: draw,
+      suspend, resume, dispose, inspect,
       snapshot() {
         if (typeof canvas.toDataURL !== 'function') return ''
         draw()
@@ -388,4 +437,4 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     throw error
   }
 }
-module.exports = { createAssembly, createShakerScene }
+module.exports = { createAssembly, createShakerScene, choosePixelRatio, DETAIL_PIXEL_BUDGET, MOTION_PIXEL_BUDGET }
