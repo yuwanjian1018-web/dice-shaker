@@ -1,6 +1,6 @@
 # V3 3D 模型接入 · 2026-09-07
 
-实际运行：`pages/index/index` 的 WebGL canvas；`utils/shaker-3d.js` 渲染真实网格，`utils/dice-3d-layout.js` 负责盘内摆放。原骰盅、盘沿和骰子图片已移至 `previous-images/` 保存。
+实际运行：`pages/index/index` 的 WebGL canvas；`utils/shaker-3d.js` 渲染真实网格，`utils/dice-3d-layout.js` 负责盘内摆放。此前图片版骰盅、盘沿和骰子已从当前工作树删除，需要时可从 Git 历史恢复。
 
 `cup-material-v3.blend`、`cup-material-v3.glb` 为用户确认的完整模型；骰子沿用此前的象牙色圆角造型及 21 个哑光球面凹点。`mobile-assets.json` 记录原模型哈希与移动资源规格。
 
@@ -14,6 +14,6 @@
 - 使用 vendored `threejs-miniprogram@0.0.8`，MIT，源自 https://github.com/wechat-miniprogram/threejs-miniprogram 。无需额外 npm 构建，不请求远程模型或 CDN。
 - 皮革扫描来自 https://ambientcg.com/view?id=Leather037 ，CC0；许可见 `assets/models/LICENSE.txt`。
 
-重建移动资源：安装 Pillow 后执行 `python scripts/build-3d-assets.py`，会复用 `surface-occlusion.json` 中与源模型哈希匹配的烘焙数据。重新烘焙可执行 `blender --background --python scripts/bake-3d-occlusion.py` 后再运行资源脚本。完整 2K 模型、烘焙缓存和历史图片放在打包排除的 `design/` 中。
+重建移动资源：安装 Pillow 后执行 `python scripts/build-3d-assets.py`，会复用 `surface-occlusion.json` 中与源模型哈希匹配的烘焙数据。重新烘焙可执行 `blender --background --python scripts/bake-3d-occlusion.py` 后再运行资源脚本。完整 2K 模型和烘焙缓存放在打包排除的 `design/` 中。
 
 测试：`node --test tests/*.test.js`、`node scripts/check-project.js`。移动几何连续 201 个开合状态检查最低点单调上升与底座间隙；480 组 1–6 颗摆放检查边界和重叠。模拟器验证和截图记录在 `runtime-verification.json`（完成验证后保存）。真机 GPU 表现、设备温升和真实声音/体感仍需实机确认。
