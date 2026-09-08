@@ -13,7 +13,7 @@ Page({
     isLocked: false, diceCount: 5, actionLabel: '摇一摇', dice: [],
     settingsOpen: false, draftDiceCount: 5, soundError: false,
     motionEnabled: false, draftMotionEnabled: false, motionError: false,
-    lidProgress: 0, modelReady: false, modelError: false, modelSnapshot: '', diceResultLabel: ''
+    lidProgress: 0, modelReady: false, modelError: false, modelSnapshot: '', diceResultLabel: '', resultsVisible: false
   },
 
   onLoad() {
@@ -37,7 +37,20 @@ Page({
   },
 
   applyGameState(state) {
-    this.setData({ ...state, diceResultLabel: state.dice.map((die, index) => `第${index + 1}颗${die.value}点`).join('，') })
+    // Dragging the lid emits a state per touch event. Shipping the whole model
+    // across the bridge each time stalls the view thread, so send only the keys
+    // that moved; a steady drag then costs one number instead of twenty values.
+    const patch = {}
+    for (const key in state) if (key !== 'dice' && state[key] !== this.data[key]) patch[key] = state[key]
+    const diceKey = state.rollRevision + ':' + state.diceCount
+    if (diceKey !== this._diceKey) {
+      this._diceKey = diceKey
+      patch.dice = state.dice
+      patch.diceResultLabel = state.dice.map((die, index) => `第${index + 1}颗${die.value}点`).join('，')
+    }
+    const resultsVisible = state.lidProgress >= 0.85
+    if (resultsVisible !== this.data.resultsVisible) patch.resultsVisible = resultsVisible
+    if (Object.keys(patch).length) this.setData(patch)
     if (this._scene3D) this._scene3D.update(state)
     if (state.phase === 'shaking' && this._previousPhase !== 'shaking' && this._visible) {
       if (this._audio) { this._audio.stop(); this._audio.play() }

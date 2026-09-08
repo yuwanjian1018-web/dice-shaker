@@ -40,7 +40,10 @@ function createAssembly(THREE, binary, loadImage) {
       color: new THREE.Color().setRGB(c[0], c[1], c[2]),
       roughness: pbr.roughnessFactor === undefined ? 1 : pbr.roughnessFactor,
       metalness: pbr.metallicFactor === undefined ? 1 : pbr.metallicFactor,
-      side: def.doubleSided ? THREE.DoubleSide : THREE.FrontSide
+      // Every shipped primitive is wound to match its authored normal and both
+      // shells are closed, so a back face never reaches the screen. Culling them
+      // halves the rasterised triangles in the colour and depth passes alike.
+      side: THREE.FrontSide
     })
     mat.name = def.name
     mat.dithering = true
@@ -111,7 +114,9 @@ function createAssembly(THREE, binary, loadImage) {
     if (def.matrix) { node.matrix.fromArray(def.matrix); node.matrix.decompose(node.position, node.quaternion, node.scale) }
     if (def.mesh !== undefined) for (const primitive of meshes[def.mesh]) {
       const mesh = new THREE.Mesh(primitive.geo, primitive.mat)
-      mesh.castShadow = true
+      // Pips are dimples recessed into the die body and can never widen its
+      // silhouette, so keeping them out of the depth pass drops 10k triangles each.
+      mesh.castShadow = !/spherical inset/.test(primitive.mat.name)
       // Low-resolution self-shadow maps create triangular acne on the curved
       // lining. Keep geometric lighting there; dice still cast onto the tray.
       mesh.receiveShadow = !def.name.startsWith('Lid -')
@@ -150,16 +155,37 @@ function createAssembly(THREE, binary, loadImage) {
 async function createShakerScene({ THREE, canvas, width, height, pixelRatio, readBinary, loadImage }) {
   let renderer, assembly, environment
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true })
-    renderer.setPixelRatio(Math.min(pixelRatio || 1, 2))
-    renderer.setSize(width, height, false)
+    // preserveDrawingBuffer makes iOS copy the whole surface every frame; the
+    // settings snapshot instead reads the buffer back inside its drawing task.
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' })
+    // Resolution is the first thing traded when frames slip, then the shadow map.
+    // Phones vary far too much for one fixed budget, and iOS reports no device tier.
+    const QUALITY = [1, .84, .7, .58], SHADOW_SIZES = [1024, 1024, 512, 512], PIXEL_BUDGET = 1150000
+    const basePixelRatio = Math.max(1, Math.min(pixelRatio || 1, 2))
+    let quality = 0, shadowLight = null, viewWidth = width, viewHeight = height
+    function applyResolution() {
+      const ceiling = Math.min(basePixelRatio, Math.sqrt(PIXEL_BUDGET / Math.max(1, viewWidth * viewHeight)))
+      renderer.setPixelRatio(Math.max(1, ceiling * QUALITY[quality]))
+      renderer.setSize(viewWidth, viewHeight, false)
+    }
+    function applyShadowQuality() {
+      if (!shadowLight) return
+      const size = Math.min(SHADOW_SIZES[quality], renderer.capabilities.maxTextureSize)
+      if (shadowLight.shadow.mapSize.width === size) return
+      shadowLight.shadow.mapSize.set(size, size)
+      // Hold the penumbra at a fixed width in the scene as the texel size changes.
+      shadowLight.shadow.radius = size / 512
+      if (shadowLight.shadow.map) { shadowLight.shadow.map.dispose(); shadowLight.shadow.map = null }
+    }
+    applyResolution()
     // Bundled Three r108 reads gammaOutput, not the later outputEncoding API.
     renderer.gammaOutput = true
     renderer.gammaFactor = 2.2
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = .88
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    // PCF samples the map 17 times per lit fragment where PCFSoft needs 36.
+    renderer.shadowMap.type = THREE.PCFShadowMap
     renderer.setClearColor(0, 0)
     assembly = createAssembly(THREE, await readBinary(), loadImage)
     await assembly.ready
@@ -171,10 +197,10 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
       l.position.set(...xyz); l.target.position.set(0, 2, -2)
       l.castShadow = Boolean(shadow)
       if (shadow) {
-        const shadowSize = Math.min(2048, renderer.capabilities.maxTextureSize)
-        l.shadow.mapSize.set(shadowSize, shadowSize)
         Object.assign(l.shadow.camera, { left: -5, right: 5, top: 10, bottom: -6, near: 1, far: 40 })
-        l.shadow.bias = -.00003; l.shadow.radius = 4
+        l.shadow.bias = -.00003
+        shadowLight = l
+        applyShadowQuality()
       }
       scene.add(l, l.target)
     }
@@ -208,37 +234,42 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     const extra = dice[0].clone(true); extra.name = 'Dice 6'; base.add(extra); dice.push(extra)
     let progress = 0, state = {}, layout, layoutRevision, lastCount, visible = true, disposed = false, raf = null
     let closing = null, shakeStart = 0
-    const points = [], basePoints = [], point = new THREE.Vector3(), direction = new THREE.Vector3(0, .5, Math.sqrt(.75))
-    const up = new THREE.Vector3(0, direction.z, -direction.y), right = new THREE.Vector3(1, 0, 0)
+    let previousFrame = 0, frameTotal = 0, frameCount = 0, calmWindows = 0
+    const point = new THREE.Vector3(), direction = new THREE.Vector3(0, .5, Math.sqrt(.75))
+    const up = new THREE.Vector3(0, direction.z, -direction.y)
+    // Each fit only ever reads flat projections of a swept vertex, so the sweep
+    // stores those instead of ~95k live Vector3 objects and the churn they cause.
+    const spread = [], floor = []
     for (let i = 0; i <= 20; i++) {
       assembly.pose(i / 20)
       for (const node of [lid, base.children.find(n => n.name.startsWith('Base -'))]) node.traverse(mesh => {
         if (!mesh.isMesh) return
         const pos = mesh.geometry.attributes.position
         for (let k = 0; k < pos.count; k++) {
-          const p = new THREE.Vector3().fromBufferAttribute(pos, k).applyMatrix4(mesh.matrixWorld)
-          points.push(p)
-          if (node !== lid) basePoints.push(p)
+          point.fromBufferAttribute(pos, k).applyMatrix4(mesh.matrixWorld)
+          spread.push(Math.abs(point.x), point.dot(direction))
+          if (node !== lid) floor.push(point.dot(direction), point.dot(up))
         }
       })
     }
+    const spreadFit = Float32Array.from(spread), floorFit = Float32Array.from(floor)
+    spread.length = floor.length = 0
     const target = new THREE.Vector3(0, 2.5, -2.4)
+    // Camera-up is perpendicular to the view direction and the target never leaves
+    // the x = 0 plane, so sliding it below leaves these projections untouched.
+    const targetDepth = target.dot(direction)
     function resize(w, h) {
-      renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix()
+      viewWidth = w; viewHeight = h
+      applyResolution()
+      camera.aspect = w / h; camera.updateProjectionMatrix()
       const tanY = Math.tan(camera.fov * Math.PI / 360), tanX = tanY * camera.aspect
+      // Fill the width without zooming out to contain the rising, open lid.
       let distance = 0
-      for (const p of points) {
-        point.copy(p).sub(target)
-        // Fill the width without zooming out to contain the rising, open lid.
-        distance = Math.max(distance, point.dot(direction) + Math.abs(point.dot(right)) * 1.08 / tanX)
-      }
+      for (let i = 0; i < spreadFit.length; i += 2) distance = Math.max(distance, spreadFit[i + 1] - targetDepth + spreadFit[i] * 1.08 / tanX)
       // Anchor the base near the bottom throughout its forward tilt. Moving the
       // target along camera-up preserves depth and the width fit calculated above.
       let targetUp = Infinity
-      for (const p of basePoints) {
-        const depth = distance - point.copy(p).sub(target).dot(direction)
-        targetUp = Math.min(targetUp, p.dot(up) + .94 * depth * tanY)
-      }
+      for (let i = 0; i < floorFit.length; i += 2) targetUp = Math.min(targetUp, floorFit[i + 1] + .94 * tanY * (distance + targetDepth - floorFit[i]))
       target.addScaledVector(up, targetUp - target.dot(up))
       camera.position.copy(target).addScaledVector(direction, distance); camera.lookAt(target)
     }
@@ -266,7 +297,29 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
         assembly.root.rotation.z = Math.sin(t * 33) * .065
       } else { assembly.root.position.set(0, 0, 0); assembly.root.rotation.z = 0 }
       draw()
-      if (closing || state.phase === 'shaking') raf = canvas.requestAnimationFrame(tick)
+      // Frame spacing is the only honest measure of GPU cost here, so quality is
+      // judged solely across the runs that render back to back on their own.
+      if (closing || state.phase === 'shaking') { measure(now); raf = canvas.requestAnimationFrame(tick) }
+      else previousFrame = 0
+    }
+    function measure(now) {
+      const delta = now - previousFrame
+      previousFrame = now
+      if (delta === now || delta > 200) return
+      frameTotal += delta; frameCount += 1
+      if (frameCount < 24) return
+      const average = frameTotal / frameCount
+      frameTotal = frameCount = 0
+      // Give up a step of resolution below ~48fps, and only climb back after three
+      // calm windows so that one smooth burst cannot start an oscillation.
+      if (average > 21 && quality < QUALITY.length - 1) { quality += 1; calmWindows = 0 }
+      else if (average < 17.4 && quality > 0 && (calmWindows += 1) >= 3) { quality -= 1; calmWindows = 0 }
+      else return
+      applyResolution(); applyShadowQuality()
+    }
+    function schedule() {
+      if (disposed || !visible || raf !== null) return
+      raf = canvas.requestAnimationFrame(tick)
     }
     function update(next) {
       if (disposed) return
@@ -288,15 +341,18 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
       if (next.phase === 'covering' && previous.phase !== 'covering' && progress > 0) closing = { from: progress, start: Date.now() }
       else if (next.phase !== 'covering') { closing = null; progress = next.lidProgress }
       if (next.phase === 'shaking' && previous.phase !== 'shaking') shakeStart = Date.now()
-      if (raf !== null) canvas.cancelAnimationFrame(raf)
-      tick()
+      // A drag emits states faster than the display refreshes; letting the next
+      // frame pick up the newest progress renders once per refresh, not per event.
+      schedule()
     }
-    function suspend() { visible = false; if (raf !== null) canvas.cancelAnimationFrame(raf); raf = null }
+    function suspend() { visible = false; previousFrame = 0; if (raf !== null) canvas.cancelAnimationFrame(raf); raf = null }
     function resume() {
       if (disposed) return
       visible = true
+      previousFrame = 0
       if (raf !== null) canvas.cancelAnimationFrame(raf)
-      raf = canvas.requestAnimationFrame(tick)
+      raf = null
+      schedule()
     }
     function dispose() {
       if (disposed) return
@@ -309,6 +365,7 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     }
     function inspect() {
       return { progress, count: dice.filter(d => d.visible).length, triangles: renderer.info.render.triangles,
+        quality, pixelRatio: renderer.getPixelRatio(), shadowSize: shadowLight.shadow.mapSize.width,
         points: state.dice && state.dice.map(d => d.value), phase: state.phase, disposed,
         dice: dice.filter(d => d.visible).map((d, i) => ({ value: state.dice[i].value, position: d.position.toArray(),
           localTop: new THREE.Vector3(...FACE_NORMALS[state.dice[i].value]).applyQuaternion(d.quaternion).toArray() })),
@@ -316,7 +373,14 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     }
     assembly.pose(0)
     return { update, resize(w, h) { resize(w, h); draw() }, suspend, resume, dispose, inspect,
-      snapshot() { draw(); return typeof canvas.toDataURL === 'function' ? canvas.toDataURL('image/png') : '' } }
+      // The drawing buffer only clears once the frame reaches the compositor, so
+      // reading it back inside this task needs no preserved buffer to copy from.
+      snapshot() {
+        if (typeof canvas.toDataURL !== 'function') return ''
+        draw()
+        const data = canvas.toDataURL('image/png')
+        return typeof data === 'string' && data.length > 1024 ? data : ''
+      } }
   } catch (error) {
     if (assembly) for (const key of Object.keys(assembly.resources)) assembly.resources[key].forEach(x => x.dispose())
     if (environment) environment.dispose()

@@ -43,7 +43,7 @@ npm.cmd test
 npm.cmd run check
 ```
 
-小程序使用已包含在 vendor 中的 threejs-miniprogram 0.0.8（MIT），不需要单独构建 npm。30 项测试覆盖游戏状态、点数、3D 摆放与整段开合间隙、模型数据无损性、渲染生命周期以及手势/音效/体感逻辑。可直接运行 `node --test tests/*.test.js` 和 `node scripts/check-project.js`，无需安装 npm 依赖。旧图片布局测试已随对应旧模块删除。
+小程序使用已包含在 vendor 中的 threejs-miniprogram 0.0.8（MIT），不需要单独构建 npm。33 项测试覆盖游戏状态、点数、3D 摆放与整段开合间隙、模型数据无损性、渲染生命周期、手势/音效/体感逻辑，以及背面剔除前提与拖动时的 setData 精简。可直接运行 `node --test tests/*.test.js` 和 `node scripts/check-project.js`，无需安装 npm 依赖。旧图片布局测试已随对应旧模块删除。
 
 开发者工具优先使用官方 wechatide CLI。`scripts/verify-motion-devtools.js` 可作为 `automation_evaluate --fn-source` 的函数源，检查真实页面方法、渲染后的按钮位置和传感器生命周期；注入加速度样本不代表手机体感硬件验证。`scripts/devtools-console-check.js` 可粘贴到开发者工具 Console 检查音频与基础交互。截屏先保存到项目外，避免写入工程触发热重载后丢失待验证页面状态。
 
@@ -57,6 +57,19 @@ npm.cmd run check
 - 原有图片移至 `design/cup-model-v3/previous-images/`，完整 Blender/GLB 模型放在 `design/cup-model-v3/`。
 - `python scripts/build-3d-assets.py` 重建移动资源；合并字节完全相同的顶点、删除材质未使用的 UV，并按体积预算编码贴图。保留全部三角面、法线、有效 UV、遮蔽数据和开盖轨迹。
 - 当前为小程序实时光栅渲染；Cycles 离线灯光追踪效果没有直接搬入手机。
+
+## 移动端帧率取舍
+
+2026-09-08 针对 iPhone 帧率偏低做了一轮优化，画面构图（相机位置与目标）保持不变，回归测试在 `tests/` 中：
+
+- **关闭 `preserveDrawingBuffer`**：iOS 会因此每帧复制整块画布。设置页快照改为在同一次绘制任务内读回；取不到时保留画布上的最后一帧，不再退回纯色背景。
+- **全部材质改为正面渲染**：模型每个三角面的绕序都与其法线一致，且盖子与底座都是封闭壳体，因此背面永远不可见。`tests/dice-3d.test.js` 会逐面核对这一前提，重新导出模型若破坏它会直接失败。
+- **阴影从 2048 PCFSoft 降到 1024 PCF**：每个受光像素的贴图采样从 36 次降到 17 次，半影宽度用 `shadow.radius` 按比例补回。骰子的红蓝点是凹进骰体的球面，不会改变轮廓，已移出深度通道（每颗少 10k 三角面）。
+- **按帧间隔自适应分辨率**：低于约 48fps 逐级降低绘制缓冲分辨率（最低约 0.58 倍），连续三个平稳窗口才回升；同时限制绘制缓冲不超过约 115 万像素。iOS 不提供 `benchmarkLevel`，只能这样按实测调整。
+- **拖动盖子时只发送变化的字段**：原本每个 touchmove 都把整份状态（含骰子数组和朗读文案）过一次 setData 桥，现在稳定拖动时只发一个 `lidProgress`。渲染也改为按 requestAnimationFrame 合并，一帧最多画一次。
+- **相机取景改用扁平投影数组**：启动时的 9.5 万个 Vector3 换成两组 Float32Array，去掉这批对象分配和随后的 GC 压力。
+
+真机帧率提升幅度尚未在 iPhone 上实测，以上都是渲染工作量的确定性削减。`p._scene3D.inspect()` 现在会返回 `quality`、`pixelRatio` 和 `shadowSize`，可在开发者工具 Console 观察自适应是否触发。
 
 ## 历史素材与设计记录（已由 3D 替换）
 

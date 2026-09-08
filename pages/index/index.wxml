@@ -1,13 +1,13 @@
 <view class="page-shell">
   <button class="settings-button icon-button {{isBusy ? 'is-busy' : ''}}" bindtap="handleOpenSettings" disabled="{{isBusy}}" hover-class="control--pressed" aria-label="设置骰子个数和体感"><image class="icon-image" src="/assets/icons/gear-light.png" aria-hidden="true"></image></button>
   <view class="stage" bindtouchstart="handleTouchStart" catchtouchmove="handleTouchMove" bindtouchend="handleTouchEnd" bindtouchcancel="handleTouchCancel">
-    <canvas id="shaker-canvas" type="webgl" class="shaker-canvas {{modelReady ? 'shaker-canvas--ready' : ''}} {{settingsOpen ? 'shaker-canvas--hidden' : ''}}" binderror="handleCanvasError" role="slider" aria-label="{{isBusy ? '正在摇动，请稍候' : lidActionLabel}}"></canvas>
+    <canvas id="shaker-canvas" type="webgl" class="shaker-canvas {{modelReady ? 'shaker-canvas--ready' : ''}} {{settingsOpen && modelSnapshot ? 'shaker-canvas--hidden' : ''}}" binderror="handleCanvasError" role="slider" aria-label="{{isBusy ? '正在摇动，请稍候' : lidActionLabel}}"></canvas>
     <image wx:if="{{settingsOpen && modelSnapshot}}" class="model-snapshot" src="{{modelSnapshot}}" mode="scaleToFill" aria-hidden="true"></image>
     <view wx:if="{{!modelReady}}" class="model-status">
       <text>{{modelError ? '模型加载失败，请重试' : '正在准备骰盅…'}}</text>
       <button wx:if="{{modelError}}" class="model-retry" bindtap="init3D">重试</button>
     </view>
-    <text class="accessible-results" aria-live="polite">{{lidProgress >= 0.85 ? diceResultLabel : ''}}</text>
+    <text class="accessible-results" aria-live="polite">{{resultsVisible ? diceResultLabel : ''}}</text>
   </view>
   <view class="actions">
     <button wx:if="{{!motionEnabled}}" class="roll-button {{isLocked ? 'roll-button--locked' : ''}} {{isBusy ? 'is-busy' : ''}}" bindtap="handleRoll" disabled="{{isBusy || isLocked}}" hover-class="control--pressed">{{isLocked ? '已锁定' : actionLabel}}</button>

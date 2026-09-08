@@ -103,6 +103,23 @@ test('vertical drag tracks continuously and remains at an intermediate position 
   assert.ok(Math.abs(offset() - (fullyOpenOffset - 160)) < 0.2)
 })
 
+test('a lid drag only ships the value that moved across the setData bridge', t => {
+  const { page } = setup(t)
+  const patches = []
+  const setData = page.setData
+  page.setData = function (patch) { patches.push(Object.keys(patch).sort().join(',')); setData.call(this, patch) }
+
+  page.handleTouchStart({ touches: [{ clientY: 400 }] })
+  for (let y = 399; y >= 380; y -= 1) page.handleTouchMove({ touches: [{ clientY: y }] })
+
+  // Entering the drag reports the new phase and label once; after that a moving
+  // finger must not resend the dice, their spoken label or the unchanged flags.
+  assert.equal(patches[0], 'lidActionLabel,lidProgress,phase')
+  assert.deepEqual([...new Set(patches.slice(1))], ['lidProgress'])
+  assert.ok(page.data.lidProgress > 0 && page.data.lidProgress < 1)
+  assert.equal(page.data.dice.length, 5)
+})
+
 test('rolling from a partial opening closes the lid before the whole shaker moves', t => {
   const { page, calls } = setup(t)
   page.game.setLidProgress(0.58)

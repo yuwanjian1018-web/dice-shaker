@@ -6,7 +6,9 @@
 .settings-button.is-busy { background: rgba(36,37,38,.4) !important; opacity: .5; }
 .stage { position: absolute; top: 0; left: 0; right: 0; bottom: 23%; overflow: hidden; }
 .shaker-canvas { position: absolute; left: 0; top: 0; display: block; width: 100%; height: 100%; }
-/* Keep the native drawing surface alive while the modal uses its snapshot. */
+/* Keep the native drawing surface alive while the modal uses its snapshot. A
+   suspended canvas still shows its last frame, so a device without toDataURL
+   keeps that live image in place rather than falling back to bare background. */
 .shaker-canvas--hidden { left: -10000px; pointer-events: none; }
 .model-snapshot { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .model-status { position: absolute; left: 0; right: 0; top: 46%; text-align: center; color: #d7d7d4; font-size: 26rpx; }
