@@ -39,7 +39,26 @@ if (!process.exitCode) pass('根目录必需文件齐全')
 
 const appConfig = readJson('app.json')
 const projectConfig = readJson('project.config.json')
-readJson('sitemap.json')
+const sitemapConfig = readJson('sitemap.json')
+
+if (sitemapConfig) {
+  if (!Array.isArray(sitemapConfig.rules) || sitemapConfig.rules.length === 0) {
+    fail('sitemap.json 必须包含至少一条 rules 规则，避免真机调试报 Invalid SiteMap')
+  } else {
+    const invalidRule = sitemapConfig.rules.find((rule) => (
+      !rule ||
+      typeof rule.page !== 'string' ||
+      rule.page.length === 0 ||
+      (rule.action !== undefined && !['allow', 'disallow'].includes(rule.action))
+    ))
+
+    if (invalidRule) {
+      fail('sitemap.json 的每条规则都必须包含 page，action 如填写只能为 allow 或 disallow')
+    } else {
+      pass(`sitemap.json 已配置 ${sitemapConfig.rules.length} 条有效规则`)
+    }
+  }
+}
 if (appConfig && appConfig.lazyCodeLoading !== 'requiredComponents') {
   fail('app.json 必须启用 lazyCodeLoading: requiredComponents')
 } else if (appConfig) pass('已启用组件按需注入')
