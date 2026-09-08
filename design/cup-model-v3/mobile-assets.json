@@ -1,0 +1,85 @@
+{
+  "sourceSha256": "ba86f3e1a7f5a5740733cfd53afa21280aff6cdb7025bde991ef1aa419731c72",
+  "geometrySimplified": false,
+  "binaryBytes": 551812,
+  "vertices": [
+    {
+      "material": "Black leather exterior",
+      "before": 567,
+      "after": 567,
+      "uvRetained": true
+    },
+    {
+      "material": "Charcoal suede inner wall",
+      "before": 729,
+      "after": 729,
+      "uvRetained": true
+    },
+    {
+      "material": "Satin black edge piping",
+      "before": 1132,
+      "after": 1120,
+      "uvRetained": false
+    },
+    {
+      "material": "Matte black leather top inset",
+      "before": 403,
+      "after": 403,
+      "uvRetained": true
+    },
+    {
+      "material": "Black leather exterior",
+      "before": 405,
+      "after": 405,
+      "uvRetained": true
+    },
+    {
+      "material": "Charcoal suede inner wall",
+      "before": 324,
+      "after": 324,
+      "uvRetained": true
+    },
+    {
+      "material": "Satin black edge piping",
+      "before": 728,
+      "after": 721,
+      "uvRetained": false
+    },
+    {
+      "material": "Dark felt tray floor",
+      "before": 243,
+      "after": 243,
+      "uvRetained": true
+    },
+    {
+      "material": "Ivory polished resin",
+      "before": 6244,
+      "after": 4760,
+      "uvRetained": false
+    },
+    {
+      "material": "Matte blue spherical inset",
+      "before": 4112,
+      "after": 4112,
+      "uvRetained": false
+    },
+    {
+      "material": "Matte red spherical inset",
+      "before": 1285,
+      "after": 1285,
+      "uvRetained": false
+    }
+  ],
+  "bakedOcclusion": true,
+  "files": {
+    "cup-material-0.jpg": 160365,
+    "cup-material-1.jpg": 3356,
+    "cup-material-2.jpg": 21717,
+    "cup-scene.bin": 551812,
+    "cup-scene.js": 15727,
+    "LICENSE.txt": 458
+  },
+  "textures": "1024 normal map, 512 colour/roughness maps; original 2K textures retained in design source GLB",
+  "source": "https://ambientcg.com/view?id=Leather037",
+  "license": "CC0"
+}

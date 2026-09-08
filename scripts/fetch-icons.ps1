@@ -4,7 +4,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $iconCache = Join-Path $projectRoot 'design\icon-sources'
 [IO.Directory]::CreateDirectory($iconCache) | Out-Null
 $iconBase = 'https://raw.githubusercontent.com/phosphor-icons/core/main/'
-foreach ($iconName in @('dice-five', 'arrow-up', 'arrow-down', 'hand-tap', 'gear', 'lock', 'lock-open', 'caret-double-up', 'caret-double-down', 'x', 'minus', 'plus')) {
+foreach ($iconName in @('gear', 'lock', 'lock-open', 'x', 'minus', 'plus')) {
     $targetFile = Join-Path $iconCache ($iconName + '.svg')
     if (-not (Test-Path -LiteralPath $targetFile)) {
         Invoke-WebRequest -Uri ($iconBase + 'assets/regular/' + $iconName + '.svg') -OutFile $targetFile -TimeoutSec 30

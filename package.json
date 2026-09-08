@@ -6,10 +6,6 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "check": "node scripts/check-project.js",
-    "build:audio": "node scripts/build-shake-audio.js",
-    "capture:wechat": "node scripts/capture-devtools.js"
-  },
-  "devDependencies": {
-    "miniprogram-automator": "0.12.1"
+    "build:audio": "node scripts/build-shake-audio.js"
   }
 }

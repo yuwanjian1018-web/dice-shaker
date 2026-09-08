@@ -4,6 +4,12 @@
   const p = getCurrentPages()[0]
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
   const values = () => p.data.dice.map(die => die.value).join(',')
+  const originalMotionEnabled = p.data.motionEnabled
+  const setMotion = value => {
+    p.handleOpenSettings()
+    p.handleMotionChange({ detail: { value } })
+    p.handleSaveSettings()
+  }
   let passed = 0
   let plays = 0
   let stops = 0
@@ -17,6 +23,7 @@
     p.handleCloseSettings()
     if (p.data.isLocked) p.handleToggleLock()
     await wait(1600)
+    setMotion(false)
     const before = values()
     p.handleToggleLock(); p.handleRoll(); await wait(1700)
     check(p.data.isLocked && !p.data.isBusy && values() === before && plays === 0, 'locked click preserves values and does not play')
@@ -25,10 +32,12 @@
     await wait(1300)
     check(!p.data.isBusy && !p.data.isLidOpen && p.data.hasRolled && p._audio.paused && stops >= 1, 'roll finishes covered and actual audio stops')
     const rolled = values()
-    p.handleToggleLid(); await wait(500)
-    check(p.data.isLidOpen && values() === rolled, 'manual reveal preserves result')
+    p.game.setLidProgress(.48); await wait(50)
+    check(p.data.lidProgress === .48 && values() === rolled, 'manual lid movement stops at an intermediate position')
+    p.game.setLidProgress(1); await wait(50)
+    check(p.data.isLidOpen && values() === rolled, 'manual full reveal preserves result')
     p.handleRoll()
-    check(p.data.phase === 'covering' && !p.data.isLidOpen, 'roll from open closes first')
+    check(p.data.phase === 'covering' && p.data.lidProgress === 0, 'roll from open closes first')
     await wait(450); p.handleToggleLock(); await wait(1300)
     check(p.data.isLocked && !p.data.isBusy && values() === rolled && p._audio.paused, 'lock during shake cancels result and stops audio')
     p.handleToggleLock()
@@ -46,6 +55,7 @@
       p.handleAcceleration({x:1.6,y:0,z:1}); await wait(100)
       p.handleAcceleration({x:-1.6,y:0,z:1})
     }
+    setMotion(true)
     p.handleToggleLock(); await motion()
     check(!p.data.isBusy, 'locked sensor samples do not roll')
     p.handleToggleLock(); await motion()
@@ -55,5 +65,5 @@
     p.onShow()
     console.log('DICE_QA COMPLETE', passed, 'PASS', 'audioPlay=' + plays, 'audioStop=' + stops)
   } catch (error) { console.error('DICE_QA FAILED', error.message) }
-  finally { p._audio.offPlay(onPlay); p._audio.offStop(onStop) }
+  finally { p.game.cancelMotion(); setMotion(originalMotionEnabled); p._audio.offPlay(onPlay); p._audio.offStop(onStop) }
 })()

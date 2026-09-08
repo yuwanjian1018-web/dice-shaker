@@ -1,0 +1,6 @@
+Cup model: original project artwork. Dice geometry reuses the previously approved
+ivory matte dice with 21 concave pips. No geometry simplification in the mobile copy.
+Leather texture: ambientCG Leather037, https://ambientcg.com/view?id=Leather037
+License: CC0 1.0, https://docs.ambientcg.com/license/
+Mobile textures derived from the scanned material: black dyed albedo, adjusted
+roughness, OpenGL normal. Full 2K source is retained in design/cup-model-v3.

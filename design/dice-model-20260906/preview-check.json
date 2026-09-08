@@ -1,0 +1,37 @@
+{
+  "errors": [],
+  "results": [
+    {
+      "face": "1",
+      "ready": "true",
+      "meshes": "22"
+    },
+    {
+      "face": "2",
+      "ready": "true",
+      "meshes": "22"
+    },
+    {
+      "face": "3",
+      "ready": "true",
+      "meshes": "22"
+    },
+    {
+      "face": "4",
+      "ready": "true",
+      "meshes": "22"
+    },
+    {
+      "face": "5",
+      "ready": "true",
+      "meshes": "22"
+    },
+    {
+      "face": "6",
+      "ready": "true",
+      "meshes": "22"
+    }
+  ],
+  "angle": "55°",
+  "dragChanged": true
+}

@@ -1,7 +1,8 @@
 // 原创合成的骰子碰撞声，无外部录音、版权素材或网络依赖。
-// 固定种子、44.1 kHz / 单声道 / 16-bit PCM WAV，可一键重建。
+// 固定种子合成 PCM，再用 FFmpeg 编码为 44.1 kHz / 单声道 / 48 kbps MP3。
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const rate = 44100
 const duration = 1.2
 const samples = new Float64Array(Math.round(rate * duration))
@@ -36,5 +37,19 @@ for (let i = 0; i < samples.length; i++) {
 }
 const dir = path.resolve(__dirname, '../assets/audio')
 fs.mkdirSync(dir, { recursive: true })
-fs.writeFileSync(path.join(dir, 'dice-shake.wav'), wav)
-console.log(`dice-shake.wav: ${duration}s, ${rate}Hz, mono PCM16, ${wav.length} bytes`)
+const output = path.join(dir, 'dice-shake.mp3')
+const temporary = path.join(dir, 'dice-shake.build.mp3')
+try {
+  const encoded = spawnSync(process.env.DICE_FFMPEG || 'ffmpeg', [
+    '-hide_banner', '-loglevel', 'error', '-y', '-i', 'pipe:0',
+    '-map_metadata', '-1', '-codec:a', 'libmp3lame', '-b:a', '48k',
+    '-ar', String(rate), '-ac', '1', '-id3v2_version', '0', temporary
+  ], { input: wav, windowsHide: true })
+  if (encoded.error || encoded.status !== 0) {
+    throw new Error(`音效编码失败；请安装 FFmpeg 或设置 DICE_FFMPEG：${encoded.error?.message || encoded.stderr.toString()}`)
+  }
+  fs.renameSync(temporary, output)
+  console.log(`dice-shake.mp3: ${duration}s source, ${rate}Hz, mono 48 kbps, ${fs.statSync(output).size} bytes`)
+} finally {
+  if (fs.existsSync(temporary)) fs.unlinkSync(temporary)
+}
