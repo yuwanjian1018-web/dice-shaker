@@ -26,18 +26,13 @@ function createDiceGame(options = {}) {
     diceCount: 5,
     actionLabel: '摇一摇',
     lidActionLabel: '向上拖动打开骰盅',
-    lidStateLabel: '已合盖',
-    statusText: '摇一摇，再打开看看',
     dice: toDiceModels(initialValues)
   }
 
   function getState() {
     return {
       ...state,
-      dice: state.dice.map((die) => ({
-        ...die,
-        pips: die.pips.map((pip) => ({ ...pip }))
-      }))
+      dice: state.dice.map((die) => ({ ...die }))
     }
   }
 
@@ -63,16 +58,12 @@ function createDiceGame(options = {}) {
       isLidOpen: false,
       lidProgress: 0,
       actionLabel: '摇动中',
-      lidActionLabel: '请稍候',
-      lidStateLabel: '准备摇动',
-      statusText: '先盖好，留一点小悬念'
+      lidActionLabel: '请稍候'
     })
 
     after(COVER_DURATION_MS, () => {
       update({
-        phase: 'shaking',
-        lidStateLabel: '摇动中',
-        statusText: '好手气，正在酝酿'
+        phase: 'shaking'
       })
 
       after(SHAKE_DURATION_MS, () => {
@@ -88,8 +79,6 @@ function createDiceGame(options = {}) {
           rollRevision: state.rollRevision + 1,
           actionLabel: '再摇一次',
           lidActionLabel: '向上拖动打开骰盅',
-          lidStateLabel: '已合盖',
-          statusText: '摇好了，打开看看吧',
           dice: toDiceModels(values)
         })
       })
@@ -101,6 +90,7 @@ function createDiceGame(options = {}) {
   function setLidProgress(progress) {
     if (disposed || state.isBusy || !Number.isFinite(progress)) return false
     const normalized = Math.round(Math.min(1, Math.max(0, progress)) * 1000) / 1000
+    if (normalized === state.lidProgress) return true
     const phase = normalized === 0 ? 'covered' : (normalized === 1 ? 'revealed' : 'lid-moving')
     const isLidOpen = normalized === 1
 
@@ -110,9 +100,7 @@ function createDiceGame(options = {}) {
       lidProgress: normalized,
       lidActionLabel: normalized === 0
         ? '向上拖动打开骰盅'
-        : (normalized === 1 ? '向下拖动合上骰盅' : '拖动调整骰盅开合位置'),
-      lidStateLabel: normalized === 0 ? '已合盖' : (normalized === 1 ? '已完全打开' : `已打开 ${Math.round(normalized * 100)}%`),
-      statusText: state.hasRolled ? '拖动骰盅查看本轮结果' : '准备好了，就摇一摇'
+        : (normalized === 1 ? '向下拖动合上骰盅' : '拖动调整骰盅开合位置')
     })
     return true
   }

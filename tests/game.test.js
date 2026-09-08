@@ -66,6 +66,17 @@ test('manual lid movement is continuous, clamps at both ends and preserves dice'
   assert.equal(game.setLidProgress(NaN), false)
 })
 
+test('repeated drag positions do not notify the view and snapshots cannot mutate game state', () => {
+  let updates = 0
+  const game = createDiceGame({ onChange: () => updates++ })
+  game.setLidProgress(.5)
+  game.setLidProgress(.50001)
+  assert.equal(updates, 1)
+  const snapshot = game.getState()
+  snapshot.dice[0].value = 6
+  assert.equal(game.getState().dice[0].value, 1)
+})
+
 test('shaking creates one fresh result and finishes fully covered', () => {
   const clock = createFakeClock()
   const samples = [0, 0.2, 0.4, 0.6, 0.999999]

@@ -8,7 +8,7 @@
   const passed = [];
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const check = (ok, name) => { if (!ok) throw new Error(name); passed.push(name) };
-  const positions = () => p.data.dice.map(die => die.position).join('|');
+  const positions = () => JSON.stringify(p._scene3D.inspect().dice.map(die => die.position));
   const setMotion = value => {
     p.handleOpenSettings();
     p.handleMotionChange({ detail: { value } });
@@ -52,7 +52,7 @@
     check(p.data.isBusy, 'unlocked motion samples start roll');
     await wait(1650);
     check(p.data.phase === 'covered' && p.data.hasRolled && positions() !== before, 'roll finishes covered with a new layout');
-    check((await query('.dice-tray--covered')).length === 1, 'covered cup hides every die');
+    check(p._scene3D.inspect().progress === 0 && p._scene3D.inspect().triangles === 6720, 'covered cup skips every die mesh');
     const rolled = positions();
     p.game.setLidProgress(1);
     p.game.setLidProgress(0.4);
@@ -72,7 +72,8 @@
       p.game.setDiceCount(count);
       p.game.setLidProgress(1);
       await wait(50);
-      check((await query('.die')).length === count, 'renders ' + count + ' dice');
+      const scene = p._scene3D.inspect();
+      check(scene.count === count && scene.triangles === 6720 + count * 19596, 'renders ' + count + ' dice');
     };
     return { passed: passed.length, checks: passed, viewport: wx.getWindowInfo().windowWidth };
   } finally {

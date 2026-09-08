@@ -31,12 +31,12 @@
         "type": "file"
       },
       {
-        "value": "assets/cup-mint.png",
+        "value": "package.json",
         "type": "file"
       },
       {
-        "value": "assets/tray-sage.png",
-        "type": "file"
+        "value": ".git",
+        "type": "folder"
       }
     ],
     "include": []

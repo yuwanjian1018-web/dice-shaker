@@ -25,23 +25,10 @@ test('rollDice returns exactly five dice by default', () => {
   assert.deepEqual(result, [1, 2, 3, 4, 5])
 })
 
-test('createDieModel exposes the correct visible pip positions', () => {
-  const expectedVisibleKeys = {
-    1: ['mc'],
-    2: ['tl', 'br'],
-    3: ['tl', 'mc', 'br'],
-    4: ['tl', 'tr', 'bl', 'br'],
-    5: ['tl', 'tr', 'mc', 'bl', 'br'],
-    6: ['tl', 'tr', 'ml', 'mr', 'bl', 'br']
-  }
-
+test('die state contains only identity and value; appearance comes from the 3D model', () => {
   for (let value = 1; value <= 6; value += 1) {
     const model = createDieModel(value, value - 1)
-    const visibleKeys = model.pips.filter((pip) => pip.visible).map((pip) => pip.key)
-
-    assert.equal(model.id, `die-${value - 1}`)
-    assert.equal(model.value, value)
-    assert.deepEqual(visibleKeys, expectedVisibleKeys[value])
+    assert.deepEqual(model, { id: `die-${value - 1}`, value })
   }
 })
 
@@ -50,7 +37,8 @@ test('createDieModel rejects values outside a standard die', () => {
   assert.throws(() => createDieModel(7, 0), /between 1 and 6/)
 })
 
-test('one and four have red pips; two, three, five and six have blue pips', () => {
-  const colors = [1, 2, 3, 4, 5, 6].map(value => createDieModel(value, 0).color)
-  assert.deepEqual(colors, ['red', 'blue', 'blue', 'red', 'blue', 'blue'])
+test('invalid random output cannot create an invalid die value', () => {
+  for (const sample of [NaN, Infinity, -0.1, 1, '0.5', undefined, null]) {
+    assert.throws(() => rollDie(() => sample), RangeError)
+  }
 })

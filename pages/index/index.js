@@ -1,8 +1,10 @@
 const { createDiceGame } = require('../../utils/game')
-const { createDiceLayout, dicePositionStyle } = require('../../utils/dice-layout')
 const { createShakeDetector } = require('../../utils/shake-detector')
+const { createScopedThreejs } = require('../../vendor/threejs-miniprogram/index')
+const { createShakerScene } = require('../../utils/shaker-3d')
 
-const LID_TRAVEL_RPX = 308
+// Finger travel controls the model's sampled opening animation.
+const LID_TRAVEL_RPX = 340
 const MOTION_SETTING_KEY = 'dice-shaker-motion-enabled'
 
 Page({
@@ -11,10 +13,11 @@ Page({
     isLocked: false, diceCount: 5, actionLabel: '摇一摇', dice: [],
     settingsOpen: false, draftDiceCount: 5, soundError: false,
     motionEnabled: false, draftMotionEnabled: false, motionError: false,
-    lidProgress: 0, lidStyle: 'transform:translate3d(0,0,0);'
+    lidProgress: 0, modelReady: false, modelError: false, modelSnapshot: '', diceResultLabel: ''
   },
 
   onLoad() {
+    this._destroyed = false
     this._visible = true
     this._previousPhase = 'covered'
     this._detector = createShakeDetector()
@@ -34,17 +37,8 @@ Page({
   },
 
   applyGameState(state) {
-    const rolled = this._lastRollRevision !== state.rollRevision
-    if (!this._diceLayout || this._diceLayout.length !== state.diceCount || rolled) {
-      this._diceLayout = createDiceLayout(state.diceCount)
-    }
-    this._lastRollRevision = state.rollRevision
-    const dice = state.dice.map((die, index) => ({
-      ...die,
-      position: dicePositionStyle(this._diceLayout[index])
-    }))
-    const lidOffsetRpx = Math.round(state.lidProgress * LID_TRAVEL_RPX * 10) / 10
-    this.setData({ ...state, dice, lidStyle: `transform:translate3d(0,-${lidOffsetRpx}rpx,0);` })
+    this.setData({ ...state, diceResultLabel: state.dice.map((die, index) => `第${index + 1}颗${die.value}点`).join('，') })
+    if (this._scene3D) this._scene3D.update(state)
     if (state.phase === 'shaking' && this._previousPhase !== 'shaking' && this._visible) {
       if (this._audio) { this._audio.stop(); this._audio.play() }
       if (typeof wx !== 'undefined' && wx.vibrateShort) wx.vibrateShort({ type: 'medium', fail() {} })
@@ -52,11 +46,63 @@ Page({
     this._previousPhase = state.phase
   },
 
+  onReady() { this.init3D() },
+
+  init3D() {
+    if (this._destroyed || typeof wx === 'undefined' || !wx.createSelectorQuery) return
+    const generation = this._sceneGeneration = (this._sceneGeneration || 0) + 1
+    if (this._scene3D) this._scene3D.dispose()
+    this._scene3D = null
+    this.setData({ modelReady: false, modelError: false })
+    wx.createSelectorQuery().select('#shaker-canvas').fields({ node: true, size: true }).exec(async results => {
+      if (generation !== this._sceneGeneration || this._destroyed) return
+      try {
+        const result = results && results[0]
+        if (!result || !result.node || !result.width || !result.height) throw new Error('WebGL canvas is unavailable')
+        const canvas = result.node
+        const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+        const scene = await createShakerScene({
+          THREE: createScopedThreejs(canvas), canvas, width: result.width, height: result.height, pixelRatio: info.pixelRatio,
+          readBinary: () => new Promise((resolve, reject) => wx.getFileSystemManager().readFile({ filePath: 'assets/models/cup-scene.bin', success: r => resolve(r.data), fail: reject })),
+          loadImage: src => new Promise((resolve, reject) => {
+            const image = canvas.createImage()
+            image.onload = () => resolve(image)
+            image.onerror = () => reject(new Error('Unable to load model texture: ' + src))
+            image.src = src
+          })
+        })
+        if (generation !== this._sceneGeneration || this._destroyed) { scene.dispose(); return }
+        this._scene3D = scene
+        if (!this._visible || this.data.settingsOpen) scene.suspend()
+        scene.update(this.game.getState())
+        this.setData({ modelReady: true, modelError: false })
+      } catch (error) {
+        if (generation !== this._sceneGeneration || this._destroyed) return
+        this.setData({ modelReady: false, modelError: true })
+        console.error('3D 骰盅加载失败', error && (error.message || error.errMsg || error))
+      }
+    })
+  },
+
+  handleCanvasError(event) {
+    console.error('3D 骰盅画布错误', event.detail)
+    this.setData({ modelReady: false, modelError: true })
+  },
+
+  onResize() {
+    if (!this._scene3D) return
+    wx.createSelectorQuery().select('#shaker-canvas').fields({ size: true }).exec(results => {
+      if (this._scene3D && results[0] && results[0].width && results[0].height) this._scene3D.resize(results[0].width, results[0].height)
+    })
+    const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+    this._lidTravelPx = LID_TRAVEL_RPX * info.windowWidth / 750
+  },
+
   initSound() {
     if (typeof wx === 'undefined' || !wx.createInnerAudioContext) return
     try {
       this._audio = wx.createInnerAudioContext()
-      this._audio.src = '/assets/audio/dice-shake.wav'
+      this._audio.src = '/assets/audio/dice-shake.mp3'
       this._audio.loop = true
       this._audio.volume = 0.8
       this._audio.obeyMuteSwitch = false
@@ -76,6 +122,7 @@ Page({
 
   onShow() {
     this._visible = true
+    if (this._scene3D && !this.data.settingsOpen) this._scene3D.resume()
     if (this._detector) this._detector.reset()
     this.syncMotionSensor()
   },
@@ -159,11 +206,16 @@ Page({
 
   handleOpenSettings() {
     if (this.data.isBusy) return
-    this.setData({ settingsOpen: true, draftDiceCount: this.data.diceCount, draftMotionEnabled: this.data.motionEnabled })
+    let modelSnapshot = ''
+    if (this._scene3D) {
+      try { modelSnapshot = this._scene3D.snapshot() } catch (error) { console.warn('模型背景快照不可用', error.message) }
+      this._scene3D.suspend()
+    }
+    this.setData({ settingsOpen: true, modelSnapshot, draftDiceCount: this.data.diceCount, draftMotionEnabled: this.data.motionEnabled })
     this.syncMotionSensor()
   },
   handleCloseSettings() {
-    this.setData({ settingsOpen: false })
+    this.setData({ settingsOpen: false, modelSnapshot: '' }, () => { if (this._scene3D) this._scene3D.resume() })
     this.syncMotionSensor()
   },
   handleMotionChange(event) {
@@ -177,7 +229,7 @@ Page({
   },
   handleSaveSettings() {
     if (this.game && !this.data.isLocked) this.game.setDiceCount(this.data.draftDiceCount)
-    this.setData({ settingsOpen: false, motionEnabled: this.data.draftMotionEnabled, motionError: false })
+    this.setData({ settingsOpen: false, modelSnapshot: '', motionEnabled: this.data.draftMotionEnabled, motionError: false }, () => { if (this._scene3D) this._scene3D.resume() })
     this.saveMotionPreference()
     this.syncMotionSensor()
   },
@@ -185,12 +237,17 @@ Page({
 
   onHide() {
     this._visible = false
+    if (this._scene3D) this._scene3D.suspend()
     if (this.game) this.game.cancelMotion()
     this.stopSound()
     this.stopMotionSensor()
   },
   onUnload() {
     this.onHide()
+    this._destroyed = true
+    this._sceneGeneration = (this._sceneGeneration || 0) + 1
+    if (this._scene3D) this._scene3D.dispose()
+    this._scene3D = null
     if (this.game) this.game.dispose()
     this.game = null
     if (this._audio) this._audio.destroy()

@@ -2,26 +2,16 @@
 .page-shell { position: relative; height: 100vh; min-height: 580px; overflow: hidden; background-color: #353739; color: #f3f1ed; }
 .icon-button { display: flex; align-items: center; justify-content: center; padding: 0; margin: 0; border: 1rpx solid #c6c6c5; border-radius: 50%; color: #eee; background: rgba(36,37,38,.4); box-shadow: inset 0 0 0 3rpx rgba(0,0,0,.3), 0 3rpx 4rpx rgba(0,0,0,.15); }
 .icon-image { width: 43rpx; height: 43rpx; }
-.settings-button { position: absolute; z-index: 6; top: 15rpx; left: 30rpx; width: 70rpx !important; height: 70rpx; }
+.settings-button { position: absolute; z-index: 6; top: 15rpx; left: 18rpx; width: 70rpx !important; height: 70rpx; }
 .settings-button.is-busy { background: rgba(36,37,38,.4) !important; opacity: .5; }
-.stage { position: absolute; inset: 0; overflow: hidden; }
-.table { position: absolute; left: 50%; bottom: 25%; width: 640rpx; height: 660rpx; margin-left: -320rpx; }
-.shaker-size { position: absolute; inset: 0; transform: scale(1.12); transform-origin: 50% 86%; }
-.shaker-motion { position: absolute; inset: 0; transform-origin: 50% 86%; }
-.shaker-motion--shaking { animation: shaker-shake .19s ease-in-out infinite; }
-.tray-scene { position: absolute; z-index: 1; left: 50%; bottom: 3.2rpx; width: 562rpx; height: 337.2rpx; transform: translateX(-50%); pointer-events: none; }
-.tray-art, .tray-front { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.tray-art { z-index: 1; }
-.dice-tray { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
-.dice-tray--covered { visibility: hidden; }
-.die { position: absolute; }
-.die-image { position: relative; z-index: 1; display: block; width: 100%; height: 100%; }
-.die-shadow { position: absolute; left: 6%; top: 57%; width: 96%; height: 46%; border-radius: 50%; background: radial-gradient(ellipse,rgba(0,0,0,.75),rgba(0,0,0,.36) 42%,rgba(0,0,0,0) 72%); }
-/* Reuse the exact front rim pixels, in front of the dice but behind the cup. */
-.tray-front { z-index: 3; clip-path: polygon(0.000% 48.542%,2.875% 48.542%,3.591% 54.511%,5.717% 60.299%,9.189% 65.729%,13.900% 70.637%,19.709% 74.874%,26.437% 78.311%,33.882% 80.844%,41.817% 82.394%,50.000% 82.917%,58.183% 82.394%,66.118% 80.844%,73.563% 78.311%,80.291% 74.874%,86.100% 70.637%,90.811% 65.729%,94.283% 60.299%,96.409% 54.511%,97.125% 48.542%,100.000% 48.542%,100.000% 100.000%,0.000% 100.000%); }
-.cup-control { position: absolute; z-index: 3; left: 50%; bottom: 82rpx; width: 492rpx; height: 598rpx; margin-left: -246rpx; overflow: visible; transform-origin: 50% 86%; }
-.cup-control--covering { transition: transform .28s ease-in-out; }
-.cup-art { display: block; width: 100%; height: 100%; pointer-events: none; }
+.stage { position: absolute; top: 0; left: 0; right: 0; bottom: 23%; overflow: hidden; }
+.shaker-canvas { position: absolute; left: 0; top: 0; display: block; width: 100%; height: 100%; }
+/* Keep the native drawing surface alive while the modal uses its snapshot. */
+.shaker-canvas--hidden { left: -10000px; pointer-events: none; }
+.model-snapshot { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.model-status { position: absolute; left: 0; right: 0; top: 46%; text-align: center; color: #d7d7d4; font-size: 26rpx; }
+.model-retry { margin-top: 22rpx; width: 170rpx; color: #eee; background: #414345; font-size: 26rpx; }
+.accessible-results { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 .actions { position: absolute; z-index: 6; left: 0; right: 0; bottom: calc(4% + env(safe-area-inset-bottom)); height: 130rpx; }
 .roll-button, .done-button, .lock-button--primary { display: flex; align-items: center; justify-content: center; width: 440rpx !important; height: 112rpx; margin: 0 auto; padding: 0; border: 2rpx solid #c9c8c6; border-radius: 60rpx; color: #f3f1ed; background: linear-gradient(176deg,#333435 0%,#1c1d1e 58%,#101112 100%); box-shadow: inset 0 0 0 4rpx #1a1b1c, inset 0 5rpx 12rpx rgba(255,255,255,.05), 0 11rpx 17rpx rgba(0,0,0,.3); font-size: 39rpx; line-height: 1.2; text-shadow: 0 2rpx 3rpx #111; }
 .roll-button.is-busy, .roll-button--locked { color: #b9b9b8 !important; background: #27282a !important; opacity: .75; }
@@ -54,9 +44,8 @@
 .motion-switch { flex-shrink: 0; margin-left: 24rpx; }
 .done-button { margin-top: 52rpx; width: 450rpx !important; height: 104rpx; }
 .roll-button, .done-button, .sheet-heading, .count-label, .count-range { font-weight: 400 !important; }
-@keyframes shaker-shake { 0%,100% { transform: translate3d(-15rpx,-4rpx,0) rotate(-7deg); } 25% { transform: translate3d(14rpx,-21rpx,0) rotate(6deg); } 50% { transform: translate3d(19rpx,-3rpx,0) rotate(8deg); } 75% { transform: translate3d(-12rpx,-16rpx,0) rotate(-6deg); } }
 @keyframes sheet-enter { from { transform: translateY(100%); } to { transform: translateY(0); } }
-/* 短屏保留按钮和开盖后的杯顶，不产生纵向滚动。 */
-@media (max-height: 680px) { .page-shell { min-height: 0; } .table { bottom: 24%; transform: scale(.85); transform-origin: center bottom; } .actions { bottom: calc(2% + env(safe-area-inset-bottom)); } .settings-sheet { padding-bottom: calc(30rpx + env(safe-area-inset-bottom)); } .sheet-heading { margin-bottom: 35rpx; } }
-@media (max-height: 580px) { .table { transform: scale(.70); } .roll-button, .lock-button--primary { height: 94rpx; } .actions { height: 110rpx; } .lock-button { top: 6rpx; } .lock-button--primary { top: auto; } }
-@media (prefers-reduced-motion: reduce) { .cup-control, .settings-sheet { transition-duration: .01s; } .shaker-motion--shaking { animation-duration: .4s; } }
+/* 3D 相机按可用宽度放大底座，开盖时允许盖子超出画面顶部。 */
+@media (max-height: 680px) { .page-shell { min-height: 0; } .stage { bottom: 24%; } .actions { bottom: calc(2% + env(safe-area-inset-bottom)); } .settings-sheet { padding-bottom: calc(30rpx + env(safe-area-inset-bottom)); } .sheet-heading { margin-bottom: 35rpx; } }
+@media (max-height: 580px) { .stage { bottom: 25%; } .roll-button, .lock-button--primary { height: 94rpx; } .actions { height: 110rpx; } .lock-button { top: 6rpx; } .lock-button--primary { top: auto; } }
+@media (prefers-reduced-motion: reduce) { .settings-sheet { transition-duration: .01s; } }

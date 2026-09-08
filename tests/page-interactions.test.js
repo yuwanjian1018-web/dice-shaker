@@ -39,7 +39,7 @@ function setup(t, options = {}) {
 
 test('sound begins with the shake, stops on completion, and lock prevents restart', t => {
   const { page, calls, audio } = setup(t)
-  assert.equal(audio.src, '/assets/audio/dice-shake.wav')
+  assert.equal(audio.src, '/assets/audio/dice-shake.mp3')
   page.handleRoll()
   assert.equal(calls.play, 0)
   t.mock.timers.tick(COVER_DURATION_MS)
@@ -78,10 +78,14 @@ test('vertical drag tracks continuously and remains at an intermediate position 
 
   page.handleTouchStart({ touches: [{ clientY: 300 }] })
   page.handleTouchMove({ touches: [{ clientY: 250 }] })
-  assert.ok(page.data.lidProgress > 0.32 && page.data.lidProgress < 0.33)
+  assert.ok(page.data.lidProgress > 0 && page.data.lidProgress < 1)
+  // Finger travel maps to the 3D opening clip; no CSS bitmap offset remains.
+  const offset = () => page.data.lidProgress * 340
+  assert.ok(Math.abs(offset() - 100) < 0.2)
   page.handleTouchEnd({ changedTouches: [{ clientY: 230 }] })
   const stoppedProgress = page.data.lidProgress
-  assert.ok(stoppedProgress > 0.45 && stoppedProgress < 0.46)
+  assert.ok(stoppedProgress > 0 && stoppedProgress < 1)
+  assert.ok(Math.abs(offset() - 140) < 0.2)
   assert.equal(page.data.phase, 'lid-moving')
   t.mock.timers.tick(2000)
   assert.equal(page.data.lidProgress, stoppedProgress)
@@ -91,10 +95,12 @@ test('vertical drag tracks continuously and remains at an intermediate position 
   page.handleTouchEnd({ changedTouches: [{ clientY: 40 }] })
   assert.equal(page.data.lidProgress, 1)
   assert.equal(page.data.phase, 'revealed')
+  const fullyOpenOffset = offset()
 
   page.handleTouchStart({ touches: [{ clientY: 40 }] })
   page.handleTouchEnd({ changedTouches: [{ clientY: 120 }] })
-  assert.ok(page.data.lidProgress > 0.48 && page.data.lidProgress < 0.49)
+  assert.ok(page.data.lidProgress > 0 && page.data.lidProgress < 1)
+  assert.ok(Math.abs(offset() - (fullyOpenOffset - 160)) < 0.2)
 })
 
 test('rolling from a partial opening closes the lid before the whole shaker moves', t => {
@@ -215,9 +221,11 @@ test('sensor failure restores button mode while an old failure cannot disable a 
   assert.equal(page.data.phase, 'covering')
 })
 
-test('dice layout changes only after a completed roll or a count change', t => {
+test('page forwards roll revisions to 3D without changing them on inspection or cancellation', t => {
   const { page } = setup(t)
-  const positions = () => page.data.dice.map(die => die.position)
+  let sceneState = page.game.getState()
+  page._scene3D = { update(state) { sceneState = state }, suspend() {}, dispose() {} }
+  const positions = () => [sceneState.rollRevision, sceneState.diceCount]
   const original = positions()
   page.game.setLidProgress(1)
   assert.deepEqual(positions(), original)
@@ -234,4 +242,24 @@ test('dice layout changes only after a completed roll or a count change', t => {
   page.game.setLidProgress(0.5)
   page.onHide()
   assert.deepEqual(positions(), rolled)
+})
+
+test('3D rendering follows page visibility and is disposed on unload', t => {
+  const { page } = setup(t)
+  const calls = []
+  page._scene3D = {
+    update(state) { calls.push(['update', state.lidProgress, state.diceCount]) },
+    suspend() { calls.push(['suspend']) },
+    resume() { calls.push(['resume']) },
+    dispose() { calls.push(['dispose']) }
+  }
+  page.game.setLidProgress(.5)
+  assert.deepEqual(calls[0], ['update', .5, 5])
+  page.onHide()
+  assert.ok(calls.some(c => c[0] === 'suspend'))
+  page.onShow()
+  assert.ok(calls.some(c => c[0] === 'resume'))
+  page.onUnload()
+  assert.equal(page._scene3D, null)
+  assert.equal(calls.filter(c => c[0] === 'dispose').length, 1)
 })
