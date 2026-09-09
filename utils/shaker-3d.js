@@ -1,15 +1,36 @@
 const { FACE_NORMALS, createLayout } = require('./dice-3d-layout')
 const model = require('../assets/models/cup-scene')
-const { COVER_DURATION_MS } = require('./game')
+const { COVER_DURATION_MS, SHAKE_DURATION_MS } = require('./game')
 
-const DETAIL_PIXEL_BUDGET = 2200000
+const DETAIL_PIXEL_BUDGET = 5000000
 const MOTION_PIXEL_BUDGET = 1150000
-const MAX_DETAIL_PIXEL_RATIO = 3
+const MAX_DETAIL_PIXEL_RATIO = 4.25
+const DETAIL_OVERSAMPLE = 1.4
+const DETAIL_QUALITY = [1, .86, .75, .66]
+const MOTION_QUALITY = [1, .84, .7, .58]
+const DETAIL_SHADOW_SIZES = [2048, 1024, 1024, 512]
+const MOTION_SHADOW_SIZES = [1024, 1024, 512, 512]
+const MAX_DICE = 6
+const SHAKE_SETTLE_MS = 260
 
-function choosePixelRatio(pixelRatio, width, height, pixelBudget, scale) {
-  const deviceRatio = Math.max(1, Math.min(Number(pixelRatio) || 1, MAX_DETAIL_PIXEL_RATIO))
+// Keep the final part of a shake continuous. Previously the oscillation kept its
+// full amplitude until the game timer ended and then snapped straight to zero.
+function shakeEnvelope(elapsedMs) {
+  const remaining = Math.max(0, Math.min(1, (SHAKE_DURATION_MS - Math.max(0, elapsedMs)) / SHAKE_SETTLE_MS))
+  return remaining * remaining * (3 - 2 * remaining)
+}
+
+function choosePixelRatio(pixelRatio, width, height, pixelBudget, scale, oversample) {
+  const requestedRatio = (Number(pixelRatio) || 1) * (oversample === undefined ? 1 : oversample)
+  const deviceRatio = Math.max(1, Math.min(requestedRatio, MAX_DETAIL_PIXEL_RATIO))
   const budgetRatio = Math.sqrt(pixelBudget / Math.max(1, width * height))
   return Math.max(1, Math.min(deviceRatio, budgetRatio) * (scale === undefined ? 1 : scale))
+}
+
+function chooseShadowSize(dynamicResolution, quality, maxTextureSize) {
+  const sizes = dynamicResolution ? MOTION_SHADOW_SIZES : DETAIL_SHADOW_SIZES
+  const index = Math.max(0, Math.min(sizes.length - 1, Number.isInteger(quality) ? quality : 0))
+  return Math.max(1, Math.min(sizes[index], Number(maxTextureSize) || sizes[index]))
 }
 
 // Loader deliberately supports the static meshes, PBR maps and sampled TRS tracks
@@ -72,6 +93,18 @@ function createAssembly(THREE, binary, loadImage) {
     }
     const coat = (def.extensions || {}).KHR_materials_clearcoat
     if (coat) { mat.clearcoat = coat.clearcoatFactor || 0; mat.clearcoatRoughness = coat.clearcoatRoughnessFactor || 0 }
+    // Preserve the approved ivory colour while giving the rounded bevels a
+    // narrower studio highlight. A faint coat on the inset makes its concavity
+    // read clearly without turning the coloured pips into glossy beads.
+    if (/Ivory polished resin/.test(def.name)) {
+      mat.roughness = Math.min(mat.roughness, .21)
+      mat.clearcoat = Math.max(mat.clearcoat, .42)
+      mat.clearcoatRoughness = .12
+    } else if (/spherical inset/.test(def.name)) {
+      mat.roughness = Math.min(mat.roughness, .72)
+      mat.clearcoat = Math.max(mat.clearcoat, .08)
+      mat.clearcoatRoughness = .2
+    }
     if (model.meshes.some(mesh => mesh.primitives.some(p => p.attributes._OCCLUSION !== undefined))) {
       mat.onBeforeCompile = shader => {
         shader.vertexShader = 'attribute float occlusion; varying float vCavity;\n' + shader.vertexShader
@@ -162,6 +195,87 @@ function createAssembly(THREE, binary, loadImage) {
   return { root, nodes, pose, resources, ready: Promise.all(promises) }
 }
 
+// The six dice share identical geometry and materials. Rebuilding three dynamic
+// buffers when a result changes is cheaper than submitting three draw calls per
+// die on every rendered frame, and leaves every authored triangle intact.
+function createDiceBatch(THREE, dice, parent, resources) {
+  if (!dice.length || dice.length > MAX_DICE) throw new Error('Dice batch expects one through six dice')
+  const sourceMeshes = dice[0].children.filter(child => child.isMesh)
+  if (!sourceMeshes.length) throw new Error('Dice batch source mesh is unavailable')
+  const root = new THREE.Group()
+  root.name = 'Dice batch'
+  root.visible = false
+  const parts = sourceMeshes.map(sourceMesh => {
+    const source = sourceMesh.geometry
+    if (!source.index || !source.attributes.position || !source.attributes.normal) throw new Error('Dice batch requires indexed positions and normals')
+    const geometry = new THREE.BufferGeometry()
+    const vertexCount = source.attributes.position.count
+    for (const name of Object.keys(source.attributes)) {
+      const attribute = source.attributes[name]
+      const values = new attribute.array.constructor(attribute.array.length * MAX_DICE)
+      if (name !== 'position' && name !== 'normal') {
+        for (let slot = 0; slot < MAX_DICE; slot++) values.set(attribute.array, slot * attribute.array.length)
+      }
+      const packed = new THREE.BufferAttribute(values, attribute.itemSize, attribute.normalized)
+      if ((name === 'position' || name === 'normal') && packed.setDynamic) packed.setDynamic(true)
+      geometry.addAttribute(name, packed)
+    }
+    const sourceIndex = source.index.array
+    const IndexArray = vertexCount * MAX_DICE > 65535 ? Uint32Array : sourceIndex.constructor
+    const indices = new IndexArray(sourceIndex.length * MAX_DICE)
+    for (let slot = 0; slot < MAX_DICE; slot++) {
+      const vertexOffset = slot * vertexCount
+      const indexOffset = slot * sourceIndex.length
+      for (let i = 0; i < sourceIndex.length; i++) indices[indexOffset + i] = sourceIndex[i] + vertexOffset
+    }
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+    geometry.setDrawRange(0, 0)
+    const mesh = new THREE.Mesh(geometry, sourceMesh.material)
+    mesh.castShadow = sourceMesh.castShadow
+    mesh.receiveShadow = sourceMesh.receiveShadow
+    // All batches remain inside the already fitted shaker viewport. Avoid
+    // rebuilding bounds whenever the result changes.
+    mesh.frustumCulled = false
+    root.add(mesh)
+    resources.geometries.push(geometry)
+    return {
+      mesh, sourcePosition: source.attributes.position, sourceNormal: source.attributes.normal,
+      targetPosition: geometry.attributes.position, targetNormal: geometry.attributes.normal,
+      vertexCount, indexCount: sourceIndex.length
+    }
+  })
+  for (const die of dice) for (const child of die.children.slice()) die.remove(child)
+  parent.add(root)
+  const point = new THREE.Vector3(), normal = new THREE.Vector3(), normalMatrix = new THREE.Matrix3()
+  function update(count) {
+    count = Math.max(0, Math.min(dice.length, count || 0))
+    for (let slot = 0; slot < count; slot++) {
+      const die = dice[slot]
+      die.updateMatrix()
+      normalMatrix.getNormalMatrix(die.matrix)
+      for (const part of parts) {
+        const offset = slot * part.vertexCount
+        for (let i = 0; i < part.vertexCount; i++) {
+          point.fromBufferAttribute(part.sourcePosition, i).applyMatrix4(die.matrix)
+          part.targetPosition.setXYZ(offset + i, point.x, point.y, point.z)
+          normal.fromBufferAttribute(part.sourceNormal, i).applyMatrix3(normalMatrix).normalize()
+          part.targetNormal.setXYZ(offset + i, normal.x, normal.y, normal.z)
+        }
+      }
+    }
+    for (const part of parts) {
+      part.mesh.geometry.setDrawRange(0, count * part.indexCount)
+      part.targetPosition.updateRange.offset = 0
+      part.targetPosition.updateRange.count = count * part.vertexCount * part.targetPosition.itemSize
+      part.targetNormal.updateRange.offset = 0
+      part.targetNormal.updateRange.count = count * part.vertexCount * part.targetNormal.itemSize
+      part.targetPosition.needsUpdate = true
+      part.targetNormal.needsUpdate = true
+    }
+  }
+  return { root, parts, update }
+}
+
 async function createShakerScene({ THREE, canvas, width, height, pixelRatio, readBinary, loadImage }) {
   let renderer, assembly, environment
   try {
@@ -173,14 +287,15 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
       const attributes = renderer.getContext().getContextAttributes()
       antialiasActive = Boolean(attributes && attributes.antialias)
     } catch (error) {}
-    // A settled view is supersampled for clean die edges. Continuous movement
-    // uses the old, lower pixel budget and can step down further if frames slip.
-    const QUALITY = [1, .84, .7, .58], SHADOW_SIZES = [1024, 1024, 512, 512]
+    // A settled view is supersampled above the screen pixel ratio for clean die
+    // edges. Continuous movement keeps the old budget and measured fallbacks.
     let quality = 0, shadowLight = null, viewWidth = width, viewHeight = height
     let dynamicResolution = false, resolutionDirty = true, appliedPixelRatio = 0
     function applyResolution() {
       const budget = dynamicResolution ? MOTION_PIXEL_BUDGET : DETAIL_PIXEL_BUDGET
-      const nextPixelRatio = choosePixelRatio(pixelRatio, viewWidth, viewHeight, budget, dynamicResolution ? QUALITY[quality] : 1)
+      const scale = dynamicResolution ? MOTION_QUALITY[quality] : DETAIL_QUALITY[quality]
+      const oversample = dynamicResolution ? 1 : DETAIL_OVERSAMPLE
+      const nextPixelRatio = choosePixelRatio(pixelRatio, viewWidth, viewHeight, budget, scale, oversample)
       if (!resolutionDirty && Math.abs(nextPixelRatio - appliedPixelRatio) < .001) return
       renderer.setPixelRatio(nextPixelRatio)
       renderer.setSize(viewWidth, viewHeight, false)
@@ -195,7 +310,7 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     }
     function applyShadowQuality() {
       if (!shadowLight) return
-      const size = Math.min(SHADOW_SIZES[quality], renderer.capabilities.maxTextureSize)
+      const size = chooseShadowSize(dynamicResolution, quality, renderer.capabilities.maxTextureSize)
       if (shadowLight.shadow.mapSize.width === size) return
       shadowLight.shadow.mapSize.set(size, size)
       // Hold the penumbra at a fixed width in the scene as the texel size changes.
@@ -215,7 +330,7 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     assembly = createAssembly(THREE, await readBinary(), loadImage)
     await assembly.ready
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 4
-    const textureAnisotropy = Math.max(1, Math.min(8, maxAnisotropy || 1))
+    const textureAnisotropy = Math.max(1, Math.min(16, maxAnisotropy || 1))
     for (const texture of assembly.resources.textures) {
       texture.anisotropy = textureAnisotropy
       texture.needsUpdate = true
@@ -263,8 +378,10 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     const lid = assembly.nodes.find(n => n.name === 'LidPivot')
     const dice = assembly.nodes.filter(n => n.name.startsWith('Dice '))
     const extra = dice[0].clone(true); extra.name = 'Dice 6'; base.add(extra); dice.push(extra)
+    const diceBatch = createDiceBatch(THREE, dice, base, assembly.resources)
     let progress = 0, state = {}, layout, layoutRevision, lastCount, visible = true, disposed = false, raf = null
     let closing = null, shakeStart = 0
+    let postShakeStage = 0, pendingDiceBatchCount = null
     let interactionActive = false
     let previousFrame = 0, frameTotal = 0, frameCount = 0, calmWindows = 0
     const point = new THREE.Vector3(), direction = new THREE.Vector3(0, .5, Math.sqrt(.75))
@@ -309,11 +426,12 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     resize(width, height)
     function draw() {
       if (!visible || disposed) return
-      useDynamicResolution(interactionActive || closing || state.phase === 'shaking')
+      useDynamicResolution(interactionActive || closing || state.phase === 'shaking' || postShakeStage > 0)
       applyResolution()
+      applyShadowQuality()
       // A fully seated opaque lid hides every die. Skip those covered triangles
       // during the shake while retaining all dice objects and their exact values.
-      for (const die of dice) for (const mesh of die.children) mesh.visible = progress > .001
+      diceBatch.root.visible = progress > .001
       assembly.pose(progress)
       renderer.render(scene, camera)
     }
@@ -321,21 +439,35 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
       raf = null
       if (!visible || disposed) return
       const now = Date.now()
+      // Let one neutral, low-resolution frame reach the screen before rebuilding
+      // the hidden dice batch, then restore detail on the following frame. This
+      // keeps geometry upload and the 5 MP resolution switch off the last moving
+      // frame, where their combined cost used to look like a brief freeze.
+      if (postShakeStage === 2 && pendingDiceBatchCount !== null) {
+        diceBatch.update(pendingDiceBatchCount)
+        pendingDiceBatchCount = null
+      }
       if (closing) {
         const t = Math.min(1, (now - closing.start) / COVER_DURATION_MS)
         progress = closing.from * (1 - t * t * (3 - 2 * t))
         if (t === 1) closing = null
       }
       if (state.phase === 'shaking') {
-        const t = (now - shakeStart) / 1000
-        assembly.root.position.set(Math.sin(t * 38) * .20, Math.abs(Math.sin(t * 32)) * .16, 0)
-        assembly.root.rotation.z = Math.sin(t * 33) * .065
+        const elapsed = now - shakeStart, t = elapsed / 1000, envelope = shakeEnvelope(elapsed)
+        assembly.root.position.set(Math.sin(t * 38) * .20 * envelope, Math.abs(Math.sin(t * 32)) * .16 * envelope, 0)
+        assembly.root.rotation.z = Math.sin(t * 33) * .065 * envelope
       } else { assembly.root.position.set(0, 0, 0); assembly.root.rotation.z = 0 }
       draw()
       // Frame spacing is the only honest measure of GPU cost here, so quality is
       // judged solely across the runs that render back to back on their own.
-      if (closing || state.phase === 'shaking') { measure(now); raf = canvas.requestAnimationFrame(tick) }
-      else previousFrame = 0
+      let continueFrames = Boolean(closing || state.phase === 'shaking')
+      if (postShakeStage === 1) { postShakeStage = 2; continueFrames = true }
+      else if (postShakeStage === 2) { postShakeStage = 0; continueFrames = true }
+      if (continueFrames) {
+        if (closing || state.phase === 'shaking') measure(now)
+        else previousFrame = 0
+        raf = canvas.requestAnimationFrame(tick)
+      } else previousFrame = 0
     }
     function measure(now) {
       const delta = now - previousFrame
@@ -347,7 +479,7 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
       frameTotal = frameCount = 0
       // Give up a step of resolution below ~48fps, and only climb back after three
       // calm windows so that one smooth burst cannot start an oscillation.
-      if (average > 21 && quality < QUALITY.length - 1) { quality += 1; calmWindows = 0 }
+      if (average > 21 && quality < MOTION_QUALITY.length - 1) { quality += 1; calmWindows = 0 }
       else if (average < 17.4 && quality > 0 && (calmWindows += 1) >= 3) { quality -= 1; calmWindows = 0 }
       else return
       resolutionDirty = true
@@ -374,9 +506,27 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
         dice[i].quaternion.setFromUnitVectors(normal, new THREE.Vector3(0, 1, 0))
         dice[i].quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), pose.yaw))
       }
+      if (diceChanged) {
+        if (previous.phase === 'shaking' && next.phase !== 'shaking' && next.lidProgress <= .001) {
+          pendingDiceBatchCount = next.diceCount
+          postShakeStage = 1
+        } else {
+          diceBatch.update(next.diceCount)
+          pendingDiceBatchCount = null
+        }
+      } else if (pendingDiceBatchCount !== null && next.lidProgress > .001) {
+        // A very fast reveal must never expose the previous result.
+        diceBatch.update(pendingDiceBatchCount)
+        pendingDiceBatchCount = null
+        postShakeStage = 0
+      }
       if (next.phase === 'covering' && previous.phase !== 'covering' && progress > 0) closing = { from: progress, start: Date.now() }
       else if (next.phase !== 'covering') { closing = null; progress = next.lidProgress }
-      if (next.phase === 'shaking' && previous.phase !== 'shaking') shakeStart = Date.now()
+      if (next.phase === 'shaking' && previous.phase !== 'shaking') {
+        shakeStart = Date.now()
+        postShakeStage = 0
+        pendingDiceBatchCount = null
+      }
       // A drag emits states faster than the display refreshes; letting the next
       // frame pick up the newest progress renders once per refresh, not per event.
       schedule()
@@ -385,7 +535,9 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
       active = Boolean(active)
       if (active === interactionActive) return
       interactionActive = active
-      if (!active) schedule()
+      // Touch-start pre-allocates the cheaper motion buffers before geometry moves;
+      // touch-end schedules one quiet ultra-detail refinement frame.
+      schedule()
     }
     function suspend() {
       visible = false
@@ -414,9 +566,12 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     }
     function inspect() {
       return { progress, count: dice.filter(d => d.visible).length, triangles: renderer.info.render.triangles,
+        drawCalls: renderer.info.render.calls, diceDrawCalls: diceBatch.parts.length,
         quality, pixelRatio: renderer.getPixelRatio(), resolutionMode: dynamicResolution ? 'motion' : 'detail',
         shadowSize: shadowLight.shadow.mapSize.width, textureAnisotropy, antialiasActive,
         points: state.dice && state.dice.map(d => d.value), phase: state.phase, disposed,
+        postShakeStage, pendingDiceBatch: pendingDiceBatchCount !== null,
+        shakerPosition: assembly.root.position.toArray(), shakerRotationZ: assembly.root.rotation.z,
         dice: dice.filter(d => d.visible).map((d, i) => ({ value: state.dice[i].value, position: d.position.toArray(),
           localTop: new THREE.Vector3(...FACE_NORMALS[state.dice[i].value]).applyQuaternion(d.quaternion).toArray() })),
         lidPosition: lid.position.toArray(), baseQuaternion: base.quaternion.toArray() }
@@ -437,4 +592,7 @@ async function createShakerScene({ THREE, canvas, width, height, pixelRatio, rea
     throw error
   }
 }
-module.exports = { createAssembly, createShakerScene, choosePixelRatio, DETAIL_PIXEL_BUDGET, MOTION_PIXEL_BUDGET }
+module.exports = {
+  createAssembly, createDiceBatch, createShakerScene, choosePixelRatio, chooseShadowSize, shakeEnvelope,
+  DETAIL_PIXEL_BUDGET, MOTION_PIXEL_BUDGET, DETAIL_OVERSAMPLE, SHAKE_SETTLE_MS
+}

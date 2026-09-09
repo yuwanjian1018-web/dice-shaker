@@ -13,7 +13,7 @@
   <view class="actions">
     <button wx:if="{{!motionEnabled}}" class="roll-button {{isLocked ? 'roll-button--locked' : ''}} {{isBusy ? 'is-busy' : ''}}" bindtap="handleRoll" disabled="{{isBusy || isLocked}}" hover-class="control--pressed">{{isLocked ? '已锁定' : actionLabel}}</button>
     <button class="lock-button {{motionEnabled ? 'lock-button--primary' : 'icon-button'}} {{isLocked ? 'lock-button--locked' : ''}}" bindtap="handleToggleLock" hover-class="control--pressed" aria-label="{{isLocked ? '已锁定，点击解锁后可摇骰子' : '未锁定，点击锁定摇骰子'}}"><image class="lock-image" src="{{isLocked ? '/assets/icons/lock-light.png' : '/assets/icons/lock-open-light.png'}}" aria-hidden="true"></image><text wx:if="{{motionEnabled}}">{{isLocked ? '解锁' : '锁定'}}</text></button>
-    <text class="action-note" aria-live="polite">{{isLocked ? (motionEnabled ? '已锁定，点击上方按钮解锁' : '点右侧锁解锁') : (motionError ? '体感暂不可用，已切换为按钮' : (soundError ? '音效暂不可用，请检查设备声音' : (motionEnabled ? (isBusy ? '正在摇动…' : '晃动手机摇骰子') : '')))}}</text>
+    <text class="action-note" aria-live="polite">{{isLocked ? (motionEnabled ? '已锁定，点击上方按钮解锁' : '点右侧锁解锁') : (motionError ? '体感暂不可用，已切换为按钮' : (motionEnabled ? (isBusy ? '正在摇动…' : '晃动手机摇骰子') : ''))}}</text>
   </view>
   <view wx:if="{{settingsOpen}}" class="settings-overlay {{settingsClosing ? 'settings-overlay--closing' : ''}}" catchtouchmove="preventMove">
     <view class="settings-scrim" bindtap="handleCloseSettings"></view>

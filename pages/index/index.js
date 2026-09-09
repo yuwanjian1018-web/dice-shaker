@@ -15,7 +15,7 @@ Page({
     phase: 'covered', isBusy: false, isLidOpen: false, hasRolled: false,
     isLocked: false, diceCount: 5, actionLabel: '摇一摇', dice: [],
     settingsOpen: false, settingsClosing: false, settingsCloseDistancePx: 80,
-    soundError: false, motionEnabled: false, motionError: false,
+    motionEnabled: false, motionError: false,
     lidProgress: 0, modelReady: false, modelError: false,
     modelSnapshot: '', modelSnapshotReady: false, diceResultLabel: '', resultsVisible: false
   },
@@ -137,12 +137,9 @@ Page({
       this._audio.obeyMuteSwitch = false
       this._audio.onError((error) => {
         if (!this.game) return
-        this.setData({ soundError: true })
         console.warn('摇骰音效播放失败', error.errCode, error.errMsg)
       })
-      this._audio.onPlay(() => { if (this.game) this.setData({ soundError: false }) })
     } catch (error) {
-      this.setData({ soundError: true })
       console.warn('无法初始化摇骰音效', error.message)
     }
   },

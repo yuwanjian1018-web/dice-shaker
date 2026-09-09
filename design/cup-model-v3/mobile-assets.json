@@ -1,5 +1,5 @@
 {
-  "sourceSha256": "ba86f3e1a7f5a5740733cfd53afa21280aff6cdb7025bde991ef1aa419731c72",
+  "sourceSha256": "9aa904d74028d2675062352baface1ee9934d0b0dbb8e42bf6eeed364fc87c76",
   "geometrySimplified": false,
   "binaryBytes": 551812,
   "vertices": [
@@ -76,8 +76,8 @@
     "cup-material-1.jpg": 3356,
     "cup-material-2.jpg": 21717,
     "cup-scene.bin": 551812,
-    "cup-scene.js": 15727,
-    "LICENSE.txt": 458
+    "cup-scene.js": 15739,
+    "LICENSE.txt": 464
   },
   "textures": "1024 normal map, 512 colour/roughness maps; original 2K textures retained in design source GLB",
   "source": "https://ambientcg.com/view?id=Leather037",
