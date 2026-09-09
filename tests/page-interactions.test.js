@@ -132,11 +132,15 @@ test('opening settings keeps the live WebGL scene in place without snapshot or s
   assert.deepEqual(calls, [])
 })
 
-test('settings markup has no completion action and only hides canvas after a decoded snapshot', () => {
+test('settings markup has no completion action, decoded snapshots swap safely, and audio errors stay diagnostic', () => {
   const markup = fs.readFileSync(path.resolve(__dirname, '../pages/index/index.wxml'), 'utf8')
+  const pageSource = fs.readFileSync(path.resolve(__dirname, '../pages/index/index.js'), 'utf8')
   assert.doesNotMatch(markup, /handleSaveSettings|done-button/)
   assert.match(markup, /modelSnapshotReady \? 'shaker-canvas--snapshot-covered'/)
   assert.match(markup, /fade-in="\{\{false\}\}" bindload="handleModelSnapshotLoad"/)
+  assert.doesNotMatch(markup, /音效暂不可用|soundError/)
+  assert.doesNotMatch(pageSource, /soundError/)
+  assert.match(pageSource, /console\.warn\('摇骰音效播放失败'/)
 })
 
 test('DevTools preloads its canvas snapshot before swapping layers and releases it after close', t => {
