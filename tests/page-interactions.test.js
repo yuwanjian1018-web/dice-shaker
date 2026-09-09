@@ -32,7 +32,8 @@ function gestureHarness(threshold = 80) {
 function setup(t, options = {}) {
   const previousPage = global.Page
   const previousWx = global.wx
-  const calls = { play: 0, stop: 0, destroy: 0, listen: 0, unlisten: 0, sensorStart: [], sensorStop: 0 }
+  const calls = { play: 0, stop: 0, destroy: 0, listen: 0, unlisten: 0, sensorStart: [], sensorStop: 0, sensorOrder: [] }
+  let sensorStarted = false
   const storage = {
     'dice-shaker-motion-enabled': options.motionEnabled,
     'dice-shaker-dice-count': options.diceCount
@@ -46,10 +47,19 @@ function setup(t, options = {}) {
     getStorageSync: key => storage[key],
     setStorageSync: (key, value) => { storage[key] = value },
     vibrateShort() {},
-    onAccelerometerChange() { calls.listen += 1 },
+    onAccelerometerChange() { calls.listen += 1; calls.sensorOrder.push('listen'); sensorStarted = true },
     offAccelerometerChange() { calls.unlisten += 1 },
-    startAccelerometer(options) { calls.sensorStart.push(options) },
-    stopAccelerometer() { calls.sensorStop += 1 }
+    startAccelerometer(config) {
+      calls.sensorStart.push(config)
+      calls.sensorOrder.push('start')
+      if (options.rejectDuplicateAccelerometerStart && sensorStarted) {
+        if (config.fail) config.fail({ errMsg: 'startAccelerometer:fail already started' })
+        return
+      }
+      sensorStarted = true
+      if (config.success) config.success({})
+    },
+    stopAccelerometer() { calls.sensorStop += 1; sensorStarted = false }
   }
   let definition
   global.Page = value => { definition = value }
@@ -84,6 +94,23 @@ test('sound begins with the shake, stops on completion, and lock prevents restar
   page.handleRoll()
   t.mock.timers.tick(2000)
   assert.equal(calls.play, 1)
+})
+
+test('busy state blocks settings and repeat roll taps without applying busy visual classes', t => {
+  const { page } = setup(t)
+  page.handleRoll()
+  assert.equal(page.data.isBusy, true)
+  assert.equal(page.data.phase, 'covering')
+  page.handleOpenSettings()
+  page.handleRoll()
+  assert.equal(page.data.settingsOpen, false)
+  assert.equal(page.data.phase, 'covering')
+  t.mock.timers.tick(COVER_DURATION_MS)
+  assert.equal(page.data.phase, 'shaking')
+  page.handleOpenSettings()
+  page.handleRoll()
+  assert.equal(page.data.settingsOpen, false)
+  assert.equal(page.data.phase, 'shaking')
 })
 
 test('settings changes save immediately, clamp boundaries and survive page reloads', t => {
@@ -134,13 +161,21 @@ test('opening settings keeps the live WebGL scene in place without snapshot or s
 
 test('settings markup has no completion action, decoded snapshots swap safely, and audio errors stay diagnostic', () => {
   const markup = fs.readFileSync(path.resolve(__dirname, '../pages/index/index.wxml'), 'utf8')
+  const styles = fs.readFileSync(path.resolve(__dirname, '../pages/index/index.wxss'), 'utf8')
   const pageSource = fs.readFileSync(path.resolve(__dirname, '../pages/index/index.js'), 'utf8')
+  const settingsButton = markup.match(/<button class="settings-button icon-button"[^>]*>/)[0]
   assert.doesNotMatch(markup, /handleSaveSettings|done-button/)
   assert.match(markup, /modelSnapshotReady \? 'shaker-canvas--snapshot-covered'/)
   assert.match(markup, /fade-in="\{\{false\}\}" bindload="handleModelSnapshotLoad"/)
   assert.doesNotMatch(markup, /音效暂不可用|soundError/)
   assert.doesNotMatch(pageSource, /soundError/)
   assert.match(pageSource, /console\.warn\('摇骰音效播放失败'/)
+  assert.match(settingsButton, /hover-class="\{\{isBusy \? 'none' : 'control--pressed'\}\}"/)
+  assert.match(settingsButton, /aria-disabled="\{\{isBusy\}\}"/)
+  assert.doesNotMatch(markup, /settings-button[^"\n]*is-busy/)
+  assert.doesNotMatch(settingsButton, /\sdisabled=/)
+  assert.doesNotMatch(markup, /roll-button[^"\n]*is-busy/)
+  assert.doesNotMatch(styles, /\.settings-button\[disabled\]|\.roll-button\.is-busy/)
 })
 
 test('DevTools preloads its canvas snapshot before swapping layers and releases it after close', t => {
@@ -296,6 +331,18 @@ test('motion setting saves immediately and persists across page reloads', t => {
   page.onShow()
   assert.equal(page.data.motionEnabled, true)
   assert.equal(calls.listen, 2)
+})
+
+test('Android starts the accelerometer before registering its auto-starting listener', t => {
+  const { page, calls, storage } = setup(t, {
+    platform: 'android',
+    motionEnabled: true,
+    rejectDuplicateAccelerometerStart: true
+  })
+  assert.deepEqual(calls.sensorOrder, ['start', 'listen'])
+  assert.equal(page.data.motionEnabled, true)
+  assert.equal(page.data.motionError, false)
+  assert.equal(storage['dice-shaker-motion-enabled'], true)
 })
 
 test('motion and button triggers are mutually exclusive and disabling detaches the sensor', t => {

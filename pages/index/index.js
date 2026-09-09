@@ -187,8 +187,16 @@ Page({
       return
     }
     try {
-      wx.onAccelerometerChange(listener)
-      wx.startAccelerometer({ interval: 'game', fail })
+      // onAccelerometerChange auto-starts the sensor on some clients. Starting
+      // first avoids Android treating the following start call as a duplicate.
+      wx.startAccelerometer({
+        interval: 'game',
+        success: () => {
+          if (this._accelerometerListener !== listener) return
+          try { wx.onAccelerometerChange(listener) } catch (error) { fail() }
+        },
+        fail
+      })
     } catch (error) { fail() }
   },
 
@@ -201,7 +209,7 @@ Page({
   },
 
   handleRoll() {
-    if (!this.data.motionEnabled && this.game && this._visible && !this.data.settingsOpen && !this._settingsPending) this.game.startRoll()
+    if (!this.data.isBusy && !this.data.motionEnabled && this.game && this._visible && !this.data.settingsOpen && !this._settingsPending) this.game.startRoll()
   },
   handleToggleLock() {
     if (!this.game || this.data.settingsOpen || this._settingsPending) return

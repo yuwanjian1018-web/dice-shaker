@@ -1,6 +1,6 @@
 <wxs module="sheetGesture" src="./settings-sheet.wxs"></wxs>
 <view class="page-shell">
-  <button class="settings-button icon-button {{isBusy ? 'is-busy' : ''}}" bindtap="handleOpenSettings" disabled="{{isBusy}}" hover-class="control--pressed" aria-label="设置骰子个数和体感"><image class="icon-image" src="/assets/icons/gear-light.png" aria-hidden="true"></image></button>
+  <button class="settings-button icon-button" bindtap="handleOpenSettings" hover-class="{{isBusy ? 'none' : 'control--pressed'}}" aria-disabled="{{isBusy}}" aria-label="设置骰子个数和体感"><image class="icon-image" src="/assets/icons/gear-light.png" aria-hidden="true"></image></button>
   <view class="stage" bindtouchstart="handleTouchStart" catchtouchmove="handleTouchMove" bindtouchend="handleTouchEnd" bindtouchcancel="handleTouchCancel">
     <canvas id="shaker-canvas" type="webgl" class="shaker-canvas {{modelSnapshotReady ? 'shaker-canvas--snapshot-covered' : ''}}" binderror="handleCanvasError" role="slider" aria-label="{{isBusy ? '正在摇动，请稍候' : lidActionLabel}}"></canvas>
     <image wx:if="{{modelSnapshot}}" class="model-snapshot" src="{{modelSnapshot}}" mode="scaleToFill" fade-in="{{false}}" bindload="handleModelSnapshotLoad" binderror="handleModelSnapshotError" aria-hidden="true"></image>
@@ -11,7 +11,7 @@
     <text class="accessible-results" aria-live="polite">{{resultsVisible ? diceResultLabel : ''}}</text>
   </view>
   <view class="actions">
-    <button wx:if="{{!motionEnabled}}" class="roll-button {{isLocked ? 'roll-button--locked' : ''}} {{isBusy ? 'is-busy' : ''}}" bindtap="handleRoll" disabled="{{isBusy || isLocked}}" hover-class="control--pressed">{{isLocked ? '已锁定' : actionLabel}}</button>
+    <button wx:if="{{!motionEnabled}}" class="roll-button {{isLocked ? 'roll-button--locked' : ''}}" bindtap="handleRoll" disabled="{{isLocked}}" hover-class="{{isBusy ? 'none' : 'control--pressed'}}" aria-disabled="{{isBusy || isLocked}}">{{isLocked ? '已锁定' : actionLabel}}</button>
     <button class="lock-button {{motionEnabled ? 'lock-button--primary' : 'icon-button'}} {{isLocked ? 'lock-button--locked' : ''}}" bindtap="handleToggleLock" hover-class="control--pressed" aria-label="{{isLocked ? '已锁定，点击解锁后可摇骰子' : '未锁定，点击锁定摇骰子'}}"><image class="lock-image" src="{{isLocked ? '/assets/icons/lock-light.png' : '/assets/icons/lock-open-light.png'}}" aria-hidden="true"></image><text wx:if="{{motionEnabled}}">{{isLocked ? '解锁' : '锁定'}}</text></button>
     <text class="action-note" aria-live="polite">{{isLocked ? (motionEnabled ? '已锁定，点击上方按钮解锁' : '点右侧锁解锁') : (motionError ? '体感暂不可用，已切换为按钮' : (motionEnabled ? (isBusy ? '正在摇动…' : '晃动手机摇骰子') : ''))}}</text>
   </view>
