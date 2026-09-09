@@ -1,4 +1,4 @@
-# V3 3D 模型接入 · 2026-09-07
+# V3 3D 模型接入 · 2026-09-09
 
 实际运行：`pages/index/index` 的 WebGL canvas；`utils/shaker-3d.js` 渲染真实网格，`utils/dice-3d-layout.js` 负责盘内摆放。此前图片版骰盅、盘沿和骰子已从当前工作树删除，需要时可从 Git 历史恢复。
 
@@ -16,4 +16,4 @@
 
 重建移动资源：2 点尺寸由 `scripts/enlarge-face-two-pips.py` 以绝对目标值维护；安装 Pillow 后执行 `python scripts/build-3d-assets.py`，会复用 `surface-occlusion.json` 中与源模型哈希匹配的烘焙数据。模型发生变化时先执行 `blender --background --python scripts/bake-3d-occlusion.py` 再运行资源脚本。完整 2K 模型和烘焙缓存放在打包排除的 `design/` 中。
 
-测试：`node --test tests/*.test.js`、`node scripts/check-project.js`。移动几何连续 201 个开合状态检查最低点单调上升与底座间隙；480 组 1–6 颗摆放检查边界和重叠。模拟器验证和截图记录在 `runtime-verification.json`（完成验证后保存）。真机 GPU 表现、设备温升和真实声音/体感仍需实机确认。
+测试：`node --test tests/*.test.js`、`node scripts/check-project.js`。移动几何连续 201 个开合状态检查最低点单调上升与底座间隙；480 组 1–6 颗摆放检查边界和重叠。模拟器检查只验证当前运行状态，不作为长期静态快照提交；真机 GPU 表现、设备温升和真实声音/体感仍需实机确认。

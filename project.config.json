@@ -1,5 +1,5 @@
 {
-  "description": "原生微信小程序：摇五颗骰子并展示骰盅动画",
+  "description": "原生微信小程序：摇 1–6 颗骰子并展示骰盅动画",
   "packOptions": {
     "ignore": [
       {
@@ -15,11 +15,11 @@
         "type": "folder"
       },
       {
-        "value": "design-qa.md",
+        "value": "README.md",
         "type": "file"
       },
       {
-        "value": "README.md",
+        "value": "vendor/README.md",
         "type": "file"
       },
       {

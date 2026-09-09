@@ -16,7 +16,7 @@
 ## 在微信开发者工具中打开
 
 1. 安装并打开微信开发者工具。
-2. 导入项目，目录选择 `C:\Users\xiaojian\Documents\WeChatProjects\dice-shaker`。
+2. 导入项目，目录选择本仓库根目录。
 3. 保留项目现有 AppID，点击“编译”。
 4. 测试按钮摇骰、设置、锁定、手动开合；体感与性能仍需真机复核。
 
@@ -45,7 +45,7 @@ npm.cmd run check
 - 运行模型：`assets/models/cup-scene.js`、`assets/models/cup-scene.bin` 和三张本地 PBR 贴图
 - 可编辑源：`design/cup-model-v3/cup-material-v3.blend`
 - 完整导出：`design/cup-model-v3/cup-material-v3.glb`
-- 遮蔽缓存与验证记录：`design/cup-model-v3/surface-occlusion.json`、`runtime-verification.json`
+- 遮蔽缓存与移动资源清单：`design/cup-model-v3/surface-occlusion.json`、`mobile-assets.json`
 - 渲染库：`vendor/threejs-miniprogram`，版本 0.0.8，MIT
 - 模型纹理许可：`assets/models/LICENSE.txt`
 - 音效：`assets/audio/dice-shake.mp3`，可用 `npm run build:audio` 重建
