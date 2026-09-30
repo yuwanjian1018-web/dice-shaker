@@ -32,7 +32,10 @@ function gestureHarness(threshold = 80) {
 function setup(t, options = {}) {
   const previousPage = global.Page
   const previousWx = global.wx
-  const calls = { play: 0, stop: 0, destroy: 0, listen: 0, unlisten: 0, sensorStart: [], sensorStop: 0, sensorOrder: [] }
+  const calls = {
+    play: 0, stop: 0, destroy: 0, listen: 0, unlisten: 0,
+    sensorStart: [], sensorStop: 0, sensorOrder: [], shareMenus: []
+  }
   let sensorStarted = false
   const storage = {
     'dice-shaker-motion-enabled': options.motionEnabled,
@@ -46,6 +49,7 @@ function setup(t, options = {}) {
     nextTick: callback => callback(),
     getStorageSync: key => storage[key],
     setStorageSync: (key, value) => { storage[key] = value },
+    showShareMenu: config => { calls.shareMenus.push(config) },
     vibrateShort() {},
     onAccelerometerChange() { calls.listen += 1; calls.sensorOrder.push('listen'); sensorStarted = true },
     offAccelerometerChange() { calls.unlisten += 1 },
@@ -77,6 +81,22 @@ function setup(t, options = {}) {
   })
   return { page, calls, audio, storage }
 }
+
+test('share menu exposes friend and timeline sharing with a stable home-page entry', t => {
+  const { page, calls } = setup(t)
+  assert.equal(calls.shareMenus.length, 1)
+  assert.equal(calls.shareMenus[0].withShareTicket, false)
+  assert.deepEqual(calls.shareMenus[0].menus, ['shareAppMessage', 'shareTimeline'])
+  assert.equal(typeof calls.shareMenus[0].fail, 'function')
+  assert.deepEqual(page.onShareAppMessage(), {
+    title: '摇骰子｜聚会桌游，随手开摇',
+    path: '/pages/index/index'
+  })
+  assert.deepEqual(page.onShareTimeline(), {
+    title: '摇骰子｜聚会桌游，随手开摇',
+    query: ''
+  })
+})
 
 test('sound begins with the shake, stops on completion, and lock prevents restart', t => {
   const { page, calls, audio } = setup(t)

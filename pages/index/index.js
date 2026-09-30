@@ -9,6 +9,8 @@ const MOTION_SETTING_KEY = 'dice-shaker-motion-enabled'
 const DICE_COUNT_SETTING_KEY = 'dice-shaker-dice-count'
 const SETTINGS_DISMISS_FALLBACK_MS = 360
 const SETTINGS_CLOSE_DISTANCE_RPX = 160
+const SHARE_TITLE = '摇骰子｜聚会桌游，随手开摇'
+const SHARE_PATH = '/pages/index/index'
 
 Page({
   data: {
@@ -25,6 +27,15 @@ Page({
     this._visible = true
     this._previousPhase = 'covered'
     this._detector = createShakeDetector()
+    if (typeof wx !== 'undefined' && wx.showShareMenu) {
+      wx.showShareMenu({
+        withShareTicket: false,
+        menus: ['shareAppMessage', 'shareTimeline'],
+        fail(error) {
+          console.warn('分享菜单启用失败', error && (error.errMsg || error.message || error))
+        }
+      })
+    }
     try {
       const deviceInfo = typeof wx !== 'undefined' && wx.getDeviceInfo
         ? wx.getDeviceInfo()
@@ -49,6 +60,20 @@ Page({
     this.game = createDiceGame({ onChange: (state) => this.applyGameState(state) })
     if (initialDiceCount !== 5) this.game.setDiceCount(initialDiceCount)
     this.applyGameState(this.game.getState())
+  },
+
+  onShareAppMessage() {
+    return {
+      title: SHARE_TITLE,
+      path: SHARE_PATH
+    }
+  },
+
+  onShareTimeline() {
+    return {
+      title: SHARE_TITLE,
+      query: ''
+    }
   },
 
   applyGameState(state) {
